@@ -399,6 +399,13 @@ function checkPhp(scanner, report) {
 
   if (isSymfony) {
     report.setEnv('APP_ENV', 'prod', 'Symfony production mode');
+    if (require['symfony/asset-mapper'] != null) {
+      report.setEnv(
+        'CC_POST_BUILD_HOOK',
+        'php bin/console asset-map:compile',
+        'AssetMapper serves compiled assets in production',
+      );
+    }
     report.add({
       id: 'php.symfony-secret',
       severity: 'warning',

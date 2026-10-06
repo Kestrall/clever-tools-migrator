@@ -158,6 +158,75 @@ describe('existing add-ons on Clever Cloud', () => {
   });
 });
 
+describe('state of the application on Clever Cloud', () => {
+  const files = {
+    '.clever.json': JSON.stringify({ apps: [{ app_id: 'app_1', org_id: 'user_1', alias: 'shop', name: 'shop' }] }),
+    'composer.json': JSON.stringify({ require: { php: '>=8.4', 'symfony/framework-bundle': '8.1.*' } }),
+    'symfony.lock': '{}',
+    'public/index.php': '<?php\n',
+    '.env': 'APP_ENV=dev\nAPP_SECRET=dev\nDATABASE_URL="mysql://app:app@127.0.0.1:3306/app"\n',
+  };
+
+  it('only reports what is not done yet on the application', () => {
+    const directory = createProject(files);
+    const report = analyzeProject(directory, {
+      remote: {
+        appAlias: 'shop',
+        appType: 'php',
+        addons: [{ name: 'shop-mysql', provider: 'mysql-addon', isLinked: true }],
+        env: {
+          CC_WEBROOT: '/public',
+          CC_PHP_VERSION: '8.4',
+          APP_ENV: 'prod',
+          APP_SECRET: 'generated',
+          DATABASE_URL: 'mysql://u:p@bxyz-mysql.services.clever-cloud.com:3306/bxyz',
+        },
+      },
+    });
+    const left = report.findings.filter((finding) => finding.severity !== 'info').map((finding) => finding.id);
+    assert.deepEqual(left, ['git.missing']);
+    assert.equal(report.env.CC_WEBROOT, undefined);
+  });
+
+  it('reports an application of the wrong type', () => {
+    const directory = createProject(files);
+    const report = analyzeProject(directory, {
+      remote: { appAlias: 'shop', appType: 'docker', addons: [], env: { CC_WEBROOT: '/public' } },
+    });
+    assert.equal(report.findings.find((finding) => finding.id === 'remote.app-type')?.severity, 'blocker');
+    // The new application will need the configuration again
+    assert.equal(report.env.CC_WEBROOT?.value, '/public');
+  });
+
+  it('creates a new application in the setup script when the type does not match', () => {
+    const script = plan(createProject(files)).files.get('clever-setup.sh')?.content ?? '';
+    assert.match(script, /^EXPECTED_TYPE=php$/m);
+    assert.match(script, /^ {4}APP="\$APP-\$EXPECTED_TYPE"$/m);
+    assert.match(script, /^ {4}clever unlink "\$OLD_APP"$/m);
+    // The old application is never deleted by the script
+    assert.doesNotMatch(script, /^\s*clever delete/m);
+  });
+
+  it('generates framework secrets and keeps them between runs', () => {
+    const directory = createProject(files);
+    const first = plan(directory).files.get('.env.clever')?.content ?? '';
+    const secret = /^APP_SECRET=(\w{64})$/m.exec(first)?.[1];
+    assert.ok(secret != null && secret !== 'dev');
+    fs.writeFileSync(path.join(directory, '.env.clever'), first);
+    assert.match(plan(directory).files.get('.env.clever')?.content ?? '', new RegExp(`^APP_SECRET=${secret}$`, 'm'));
+  });
+
+  it('sets public URLs from the domain of the application', () => {
+    const directory = createProject({ ...files, '.env.example': 'DEFAULT_URI=http://localhost:8000/app\n' });
+    const { files: generated, plan: result } = plan(directory);
+    assert.match(
+      generated.get('clever-setup.sh')?.content ?? '',
+      /^clever env set DEFAULT_URI "\$APP_URL\/app" --alias "\$APP"$/m,
+    );
+    assert.ok(!result.todo.some((finding) => /DEFAULT_URI/.test(finding.title)));
+  });
+});
+
 describe('data migration', () => {
   it('offers to import a SQL file of the project when the local database is gone', () => {
     const directory = createProject({
@@ -191,7 +260,7 @@ describe('database variables of .env files', () => {
     const { files } = plan(path.join(fixtures, 'node-pg'));
     const script = files.get('clever-setup.sh')?.content ?? '';
     assert.match(script, /^DATABASE_URL_VALUE="\$\(addon_var node-pg-postgresql POSTGRESQL_ADDON_URI\)"$/m);
-    assert.match(script, /^clever env set DATABASE_URL "\$DATABASE_URL_VALUE"$/m);
+    assert.match(script, /^clever env set DATABASE_URL "\$DATABASE_URL_VALUE" --alias "\$APP"$/m);
   });
 
   it('builds a MySQL URI from the add-on variables and keeps the query string', () => {
@@ -201,9 +270,11 @@ describe('database variables of .env files', () => {
       '.env': 'DATABASE_URL="mysql://app:app@127.0.0.1:3306/app?serverVersion=8.0.32&charset=utf8mb4"\n',
     });
     const script = plan(directory).files.get('clever-setup.sh')?.content ?? '';
+    // serverVersion comes from the add-on, Doctrine must generate SQL for the real server
+    assert.match(script, /^DATABASE_URL_VERSION="\$\(addon_var [\w-]+ MYSQL_ADDON_VERSION\)"$/m);
     assert.match(
       script,
-      /clever env set DATABASE_URL "mysql:\/\/\$\{DATABASE_URL_USER\}:\$\{DATABASE_URL_PASSWORD\}@\$\{DATABASE_URL_HOST\}:\$\{DATABASE_URL_PORT\}\/\$\{DATABASE_URL_DATABASE\}\?serverVersion=8\.0\.32&charset=utf8mb4"/,
+      /clever env set DATABASE_URL "mysql:\/\/\$\{DATABASE_URL_USER\}:\$\{DATABASE_URL_PASSWORD\}@\$\{DATABASE_URL_HOST\}:\$\{DATABASE_URL_PORT\}\/\$\{DATABASE_URL_DATABASE\}\?serverVersion=\$\{DATABASE_URL_VERSION\}&charset=utf8mb4" --alias "\$APP"/,
     );
   });
 });

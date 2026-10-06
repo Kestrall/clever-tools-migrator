@@ -204,7 +204,21 @@ export function checkDatabases(scanner, report) {
   rewireEnvFiles(scanner, report);
   checkHardcodedCredentials(scanner, report);
 
+  const migrationHook = findMigrationHook(report);
   for (const database of report.databases.filter((candidate) => DATA_PROVIDERS.has(candidate.provider))) {
+    if (migrationHook != null || database.provider === 'mongodb-addon') {
+      report.add({
+        id: 'database.import-data',
+        severity: 'info',
+        title:
+          database.provider === 'mongodb-addon'
+            ? `The ${database.label} add-on starts empty: collections are created on first write, copy existing data if you need it`
+            : `The ${database.label} add-on starts empty: tables are created by your migrations (${migrationHook}), copy existing data if you need it`,
+        location: database.addonName ?? undefined,
+        fix: ['`./clever-migrate-data.sh` copies the local data into the add-on'],
+      });
+      continue;
+    }
     report.add({
       id: 'database.import-data',
       severity: 'warning',
@@ -342,6 +356,14 @@ function engineForVariable(name, value, groups, report) {
     return engine != null && isLocal && report.databases.some((database) => database.provider === engine.provider)
       ? engine
       : null;
+  }
+  // MONGODB_DB, MYSQL_DATABASE...: the add-on database has another name than the local one
+  const databaseName = /^([A-Z]+)_(DB|DATABASE|DBNAME|DB_NAME)$/.exec(name);
+  if (databaseName != null) {
+    const engine = ENGINES.find((candidate) => candidate.prefixes.includes(databaseName[1]));
+    if (engine != null && report.databases.some((database) => database.provider === engine.provider)) {
+      return engine;
+    }
   }
   for (const [prefix, engine] of groups) {
     if (
@@ -591,4 +613,20 @@ export function collectDependencies(scanner) {
     }
   }
   return names;
+}
+
+/**
+ * Migrations run by Clever Cloud create the schema of an empty database
+ * @param {MigrationReport} report
+ * @returns {string|null} the variable running them
+ */
+function findMigrationHook(report) {
+  const candidates = /** @type {const} */ ([
+    ['CC_PRE_RUN_HOOK', /migrat|db:prepare|db:migrate|prisma (db push|migrate)/],
+    ['CC_POST_BUILD_HOOK', /migrat|prisma (db push|migrate)/],
+    ['CC_PYTHON_MANAGE_TASKS', /\bmigrate\b/],
+    ['CC_RAKEGOALS', /db:(migrate|prepare|setup)/],
+    ['CC_PHOENIX_RUN_ECTO_MIGRATE', /true/],
+  ]);
+  return candidates.find(([name, pattern]) => pattern.test(report.env[name]?.value ?? ''))?.[0] ?? null;
 }

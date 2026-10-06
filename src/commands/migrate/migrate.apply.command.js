@@ -203,7 +203,13 @@ function printResult(result, dryRun, branch) {
   const hasDataScript = result.changes.some((change) => change.path === DATA_SCRIPT && change.status === 'written');
   const steps = [
     ...(result.mode === 'folder' ? [`cd ${result.targetPath}`] : []),
-    ...(hasEnvFile ? [`Review ${ENV_FILE} and fill the TODO lines`] : []),
+    ...(hasEnvFile
+      ? [
+          result.changes.some((change) => change.path === ENV_FILE && change.content.includes('# TODO'))
+            ? `Review ${ENV_FILE} and fill the TODO lines`
+            : `Review ${ENV_FILE}`,
+        ]
+      : []),
     `Review and run ./${SETUP_SCRIPT}`,
     ...(hasDataScript ? [`./${DATA_SCRIPT}  # copy your data into the add-ons`] : []),
     // On a branch, the generated files are already committed

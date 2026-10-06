@@ -91,7 +91,10 @@ export function checkRepository(scanner, report) {
         location: envFile,
         fix: [
           ...localUrls.map(([name]) => `\`clever env set ${name} https://<your-app>.cleverapps.io\` (or your domain)`),
-          ...devModes.map(([name]) => `\`clever env set ${name} production\``),
+          ...devModes.map(
+            ([name]) =>
+              `\`clever env set ${name} ${name === 'APP_ENV' && scanner.has('symfony.lock') ? 'prod' : 'production'}\``,
+          ),
         ],
       });
     }

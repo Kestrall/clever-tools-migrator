@@ -369,11 +369,15 @@ export function checkCompose(scanner, report, composePath, { isDockerRuntime }) 
         id: 'compose.service-to-addon',
         severity: 'blocker',
         title: `Service "${service.name}" (${service.image}) must be replaced by the ${mapping.label} add-on`,
-        details: mapping.note,
+        details: mapping.provider === 'mysql-addon' && !/maria/i.test(service.image ?? '') ? undefined : mapping.note,
         location,
         fix: [`\`clever addon create ${mapping.provider} ${addon.name} --link ${report.appName}\``],
       });
-      const initScripts = service.volumes.filter((volume) => volume.target.includes('docker-entrypoint-initdb.d'));
+      const initScripts = service.volumes.filter(
+        (volume) =>
+          volume.target.includes('docker-entrypoint-initdb.d') &&
+          /\bCREATE\s+TABLE\b/i.test(scanner.read(volume.source.replace(/^\.\//, '')) ?? 'CREATE TABLE'),
+      );
       if (initScripts.length > 0) {
         report.add({
           id: 'compose.init-scripts',
@@ -655,4 +659,60 @@ function joinPath(directory, file) {
  */
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Images made for local development do not run on their own: the code is mounted by docker-compose,
+ * or PHP-FPM waits for a web server that compose provides
+ * @param {ProjectScanner} scanner
+ * @param {string} dockerfilePath
+ * @returns {string|null} why the image cannot be deployed as is, null when it looks deployable
+ */
+export function findDevelopmentImageReason(scanner, dockerfilePath) {
+  const content = scanner.read(dockerfilePath);
+  if (content == null) {
+    return null;
+  }
+  const dockerfile = analyzeDockerfile(content);
+  const copiesProject = dockerfile.instructions
+    .filter(
+      (instruction) =>
+        (instruction.name === 'COPY' || instruction.name === 'ADD') && !/--from=/.test(instruction.value),
+    )
+    .some((instruction) => {
+      const sources = instruction.value
+        .replace(/--\S+\s+/g, '')
+        .replace(/^\[|\]$/g, '')
+        .split(/[\s,]+/)
+        .map((source) => source.replace(/^["']|["']$/g, '').replace(/^\.\//, ''))
+        .slice(0, -1);
+      return sources.some(
+        (source) => source === '.' || source === '' || source === '*' || isProjectPath(scanner, source),
+      );
+    });
+  if (!copiesProject) {
+    return `${dockerfilePath} does not copy the application code (docker-compose mounts it as a volume)`;
+  }
+  const finalImage = dockerfile.baseImages.at(-1) ?? '';
+  const runsFpmOnly =
+    (/^php:[^\s]*fpm/.test(finalImage) || /php-fpm/.test(dockerfile.cmd ?? '')) &&
+    !/\b(nginx|apache2?|httpd|caddy|frankenphp|unit|supervisord)\b/i.test(content);
+  if (runsFpmOnly) {
+    return `${dockerfilePath} only runs PHP-FPM, which does not answer HTTP requests without a web server`;
+  }
+  return null;
+}
+
+/**
+ * @param {ProjectScanner} scanner
+ * @param {string} source
+ * @returns {boolean}
+ */
+function isProjectPath(scanner, source) {
+  const normalized = source.replace(/\/+$/, '');
+  return (
+    normalized !== '' &&
+    (scanner.has(normalized) || scanner.hasDirectory(normalized)) &&
+    !/^(docker|\.docker|deploy|ops|infra)(\/|$)/.test(normalized)
+  );
 }

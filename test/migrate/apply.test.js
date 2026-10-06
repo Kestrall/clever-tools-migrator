@@ -80,7 +80,8 @@ describe('planMigrationFiles', () => {
   it('writes a setup script rebuilding variables from add-ons', () => {
     const script = changes.get('clever-setup.sh')?.content ?? '';
     assert.ok(changes.get('clever-setup.sh')?.executable);
-    assert.match(script, /^  clever create --type docker "\$APP"$/m);
+    assert.match(script, /^  clever create --type "\$EXPECTED_TYPE" "\$APP"$/m);
+    assert.match(script, /^EXPECTED_TYPE=docker$/m);
     assert.match(script, /^  clever addon create postgresql-addon fastapi-compose-postgresql --link "\$APP"$/m);
     // The import replaces every variable, so it must come before the other ones
     assert.ok(
@@ -88,7 +89,10 @@ describe('planMigrationFiles', () => {
         script.indexOf('clever env set CC_DOCKER_EXPOSED_HTTP_PORT 8000'),
     );
     assert.match(script, /DATABASE_URL_VALUE="\$\(addon_var fastapi-compose-postgresql POSTGRESQL_ADDON_URI\)"/);
-    assert.match(script, /clever env set DATABASE_URL "postgresql\+psycopg:\/\/\$\{DATABASE_URL_VALUE#\*:\/\/\}"/);
+    assert.match(
+      script,
+      /clever env set DATABASE_URL "postgresql\+psycopg:\/\/\$\{DATABASE_URL_VALUE#\*:\/\/\}" --alias "\$APP"/,
+    );
   });
 
   it('creates a .dockerignore for Docker applications', () => {
@@ -111,7 +115,7 @@ describe('planMigrationFiles', () => {
       '*/10 * * * * node dist/cleanup.js',
     ]);
     const flask = planFor('flask-heroku').get('clever-setup.sh')?.content ?? '';
-    assert.match(flask, /^clever env set CC_WORKER_COMMAND_0 'celery -A tasks worker'$/m);
+    assert.match(flask, /^clever env set CC_WORKER_COMMAND_0 'celery -A tasks worker' --alias "\$APP"$/m);
   });
 });
 

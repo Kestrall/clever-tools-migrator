@@ -16,7 +16,7 @@ import { checkRuntime, detectRuntimes } from './rules/runtimes.js';
 /**
  * Analyze a project and list what must change to run it on Clever Cloud
  * @param {string} projectPath
- * @param {{ type?: string|null, appName?: string|null, remote?: import('./remote-state.js').RemoteState|null }} [options]
+ * @param {{ type?: string|null, appName?: string|null, remote?: import('./remote-state.js').RemoteState|null, missingApp?: string|null }} [options]
  * @returns {MigrationReport}
  */
 export function analyzeProject(projectPath, options = {}) {
@@ -137,6 +137,17 @@ export function analyzeProject(projectPath, options = {}) {
   checkDatabases(scanner, report);
   if (options.remote != null) {
     applyRemoteState(report, options.remote);
+  }
+  if (options.missingApp != null) {
+    // Planned as a new application: the setup script removes the stale link and creates it again
+    report.linkedApp = null;
+    report.add({
+      id: 'remote.app-missing',
+      severity: 'warning',
+      title: `${options.missingApp} (.clever.json) no longer exists on Clever Cloud: it will be created again`,
+      location: '.clever.json',
+      fix: ['`./clever-setup.sh` removes the stale link and creates the application'],
+    });
   }
 
   checkForeignPlatforms(scanner, report, runtimeType);

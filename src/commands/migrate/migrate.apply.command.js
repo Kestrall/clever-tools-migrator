@@ -87,8 +87,18 @@ export const migrateApplyCommand = defineCommand({
       throw new Error(`Unknown instance type "${type}", available types: ${listAvailableTypes().join(', ')}`);
     }
 
-    const { state: remote } = offline ? { state: null } : await fetchRemoteState(root);
-    const result = await applyMigration(root, { mode, branch, output, type, appName: name, dryRun, skipCode, remote });
+    const { state: remote, missingApp } = offline ? { state: null, missingApp: null } : await fetchRemoteState(root);
+    const result = await applyMigration(root, {
+      mode,
+      branch,
+      output,
+      type,
+      appName: name,
+      dryRun,
+      skipCode,
+      remote,
+      missingApp,
+    });
 
     if (format === 'json') {
       Logger.printJson({

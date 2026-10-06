@@ -19,7 +19,7 @@ const TIMEOUT_MS = 10_000;
  * What already exists on Clever Cloud for the application linked in .clever.json.
  * Best effort: any failure (not logged in, offline...) returns the reason instead of throwing.
  * @param {string} root
- * @returns {Promise<{ state: RemoteState|null, error: string|null }>}
+ * @returns {Promise<{ state: RemoteState|null, error: string|null, missingApp?: string|null }>}
  */
 export async function fetchRemoteState(root) {
   const config = await fs
@@ -52,7 +52,10 @@ export async function fetchRemoteState(root) {
       error: null,
     };
   } catch (error) {
-    return { state: null, error: error?.message ?? String(error) };
+    const message = error?.message ?? String(error);
+    // The application of .clever.json was deleted from Clever Cloud
+    const missingApp = /doesn't belong to any app|not found|404/i.test(message) ? (app.alias ?? app.name) : null;
+    return { state: null, error: missingApp != null ? null : message, missingApp };
   }
 }
 

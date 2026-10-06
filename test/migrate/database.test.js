@@ -217,6 +217,16 @@ describe('state of the application on Clever Cloud', () => {
     assert.equal(report.env.SYMFONY_TRUSTED_PROXIES?.value, 'REMOTE_ADDR');
   });
 
+  it('recreates an application deleted from Clever Cloud', () => {
+    const directory = createProject({ ...files, 'public/.htaccess': 'RewriteEngine On\n' });
+    const report = analyzeProject(directory, { missingApp: 'shop' });
+    assert.equal(report.findings.find((finding) => finding.id === 'remote.app-missing')?.severity, 'warning');
+    assert.ok(report.commands.includes('clever create --type php shop'));
+    const script = plan(directory).files.get('clever-setup.sh')?.content ?? '';
+    assert.match(script, /^ {4}clever unlink "\$APP" >\/dev\/null 2>&1 \|\| true$/m);
+    assert.match(script, /^if \[ "\$LINKED" = yes \]; then$/m);
+  });
+
   it('generates framework secrets and keeps them between runs', () => {
     const directory = createProject(files);
     const first = plan(directory).files.get('.env.clever')?.content ?? '';

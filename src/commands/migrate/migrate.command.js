@@ -67,8 +67,12 @@ export const migrateCommand = defineCommand({
       throw new Error(`Unknown instance type "${type}", available types: ${listAvailableTypes().join(', ')}`);
     }
 
-    const { state: remote, error: remoteError } = offline ? { state: null, error: null } : await fetchRemoteState(root);
-    const report = analyzeProject(root, { type, appName: name, remote });
+    const {
+      state: remote,
+      error: remoteError,
+      missingApp,
+    } = offline ? { state: null, error: null, missingApp: null } : await fetchRemoteState(root);
+    const report = analyzeProject(root, { type, appName: name, remote, missingApp });
     if (remoteError != null) {
       report.add({
         id: 'remote.unavailable',

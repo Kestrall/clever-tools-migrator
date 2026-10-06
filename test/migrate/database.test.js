@@ -237,6 +237,29 @@ describe('state of the application on Clever Cloud', () => {
   });
 });
 
+describe('PHP extensions of Clever Cloud', () => {
+  it('pins the composer platform and aligns the local Docker image', () => {
+    const directory = createProject({
+      'composer.json': JSON.stringify({ require: { php: '>=8.4', 'doctrine/mongodb-odm-bundle': '^5.6' } }, null, 4),
+      'composer.lock': JSON.stringify({
+        packages: [
+          { name: 'mongodb/mongodb', version: '2.4.2', require: { 'ext-mongodb': '^2.4' } },
+          { name: 'doctrine/mongodb-odm', version: '2.17.1', require: { 'ext-mongodb': '^1.21 || ^2.0' } },
+        ],
+      }),
+      'docker/php/Dockerfile': 'FROM php:8.4-fpm\nRUN pecl install mongodb \\\n    && docker-php-ext-enable mongodb\n',
+      'index.php': '<?php\n',
+    });
+    const { report, files, plan: result } = plan(directory);
+    assert.deepEqual(report.composerPlatform, [
+      { extension: 'mongodb', version: '1.21.2', packages: ['mongodb/mongodb'] },
+    ]);
+    assert.equal(JSON.parse(files.get('composer.json')?.content ?? '{}').config.platform['ext-mongodb'], '1.21.2');
+    assert.match(files.get('docker/php/Dockerfile')?.content ?? '', /pecl install mongodb-1\.21\.2 \\/);
+    assert.ok(!result.todo.some((finding) => finding.id === 'php.extension-version'));
+  });
+});
+
 describe('data migration', () => {
   it('offers to import a SQL file of the project when the local database is gone', () => {
     const directory = createProject({

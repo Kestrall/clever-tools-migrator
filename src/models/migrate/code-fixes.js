@@ -173,6 +173,33 @@ export function planCodeFixes(scanner, report) {
       for (const { extension, version } of report.composerPlatform) {
         composer.config.platform[`ext-${extension}`] = version;
       }
+      // Local Docker images built with `pecl install <ext>` get the latest version: align them with Clever Cloud
+      for (const dockerfile of scanner.find(/(^|\/)(Dockerfile|Containerfile)(\.[\w-]+)?$/)) {
+        const content = scanner.read(dockerfile) ?? '';
+        const dockerEdits = [];
+        const lines = content.split('\n').map((line, index) => {
+          let rewritten = line;
+          for (const { extension, version } of report.composerPlatform) {
+            rewritten = rewritten.replace(
+              new RegExp(`(pecl install(?:\\s+-\\S+)*\\s+)${extension}(?=\\s|$|\\\\)`),
+              `$1${extension}-${version}`,
+            );
+          }
+          if (rewritten !== line) {
+            dockerEdits.push({
+              file: dockerfile,
+              line: index + 1,
+              before: line.trim(),
+              after: rewritten.trim(),
+              reason: 'Use the same extension version as Clever Cloud locally',
+            });
+          }
+          return rewritten;
+        });
+        if (dockerEdits.length > 0) {
+          addChange(dockerfile, lines.join('\n'), dockerEdits);
+        }
+      }
       changes.push({
         path: 'composer.json',
         content: JSON.stringify(composer, null, 4).replaceAll('\\/', '/') + '\n',

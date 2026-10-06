@@ -25,7 +25,7 @@ const NOT_COPIED = new Set([
 
 const COMMIT_MESSAGES = {
   config: 'chore(clever): add Clever Cloud configuration files',
-  code: 'fix(clever): listen on the port and interface provided by Clever Cloud',
+  code: 'fix(clever): adapt the code to Clever Cloud',
   setup: 'docs(clever): add Clever Cloud setup script and migration guide',
 };
 

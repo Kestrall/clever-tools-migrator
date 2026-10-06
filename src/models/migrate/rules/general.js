@@ -72,6 +72,12 @@ export function checkRepository(scanner, report) {
         /^(ENV|ENVIRONMENT|APP_ENV|NODE_ENV|RAILS_ENV|FLASK_ENV|MIX_ENV)$/.test(name) &&
         /^(dev|development|local|debug)$/i.test(value),
     );
+    for (const [name, value] of localUrls) {
+      report.devValues.push({ name, value, file: envFile, kind: 'url' });
+    }
+    for (const [name, value] of devModes) {
+      report.devValues.push({ name, value, file: envFile, kind: 'mode' });
+    }
     if (localUrls.length > 0 || devModes.length > 0) {
       report.add({
         id: 'env.dev-values',

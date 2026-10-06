@@ -29,6 +29,27 @@
  * @property {boolean} [linkAddons] whether the planned add-ons must also be linked to this application
  */
 
+/**
+ * A variable pointing to a docker-compose service that disappears in the migration
+ * @typedef {object} RewiredVariable
+ * @property {string} name
+ * @property {string} value
+ * @property {string} source compose file or env file where it was found
+ * @property {string} service referenced docker-compose service
+ * @property {string|null} addonName planned add-on replacing the service
+ * @property {string|null} addonVariable add-on variable holding the new value
+ * @property {string|null} driverScheme scheme to restore (e.g. postgresql+psycopg) when the add-on URI has none
+ */
+
+/**
+ * A value of a .env file that only makes sense on a developer machine
+ * @typedef {object} DevValue
+ * @property {string} name
+ * @property {string} value
+ * @property {string} file
+ * @property {'url'|'mode'} kind
+ */
+
 export const SEVERITY_ORDER = /** @type {const} */ (['blocker', 'warning', 'info']);
 
 export class MigrationReport {
@@ -55,6 +76,10 @@ export class MigrationReport {
     this.extraApps = [];
     /** @type {string[]} */
     this.envFilesToImport = [];
+    /** @type {RewiredVariable[]} */
+    this.rewired = [];
+    /** @type {DevValue[]} */
+    this.devValues = [];
   }
 
   /**
@@ -189,6 +214,8 @@ export class MigrationReport {
         env: Object.fromEntries(Object.entries(this.env).map(([name, { value }]) => [name, value])),
         envDetails: this.env,
         envFilesToImport: this.envFilesToImport,
+        rewired: this.rewired,
+        devValues: this.devValues,
         files: this.files,
         extraApps: this.extraApps,
         commands: this.commands,

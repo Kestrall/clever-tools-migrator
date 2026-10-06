@@ -1,10 +1,11 @@
 # Clever Tools — Migrator fork
 
-> This fork of the official [Clever Cloud CLI](https://github.com/CleverCloud/clever-tools) adds a **`clever migrate`** command: it analyzes an existing project (Dockerfile, Docker Compose, Heroku Procfile, Node.js, PHP, Python, Go…), lists what is missing to run it on Clever Cloud and generates the migration plan.
+> This fork of the official [Clever Cloud CLI](https://github.com/CleverCloud/clever-tools) adds a **`clever migrate`** command: it analyzes an existing project (Dockerfile, Docker Compose, Heroku Procfile, Node.js, PHP, Python, Go…), lists what is missing to run it on Clever Cloud and generates the migration plan. **`clever migrate apply`** then writes the changes (setup script, production `.env`, config files, migration guide) on a new git branch or in a copy of the project.
 >
 > ```bash
 > git clone https://github.com/Kestrall/clever-tools-migrator && cd clever-tools-migrator && npm ci
-> node bin/clever.js migrate /path/to/your/project
+> node bin/clever.js migrate /path/to/your/project        # report
+> node bin/clever.js migrate apply /path/to/your/project  # generate the changes on a new branch or in a copy
 > ```
 >
 > See the [migration guide](./docs/migrate.md) and the [command reference](./src/commands/migrate/migrate.docs.md). The rest of this README is the upstream documentation.

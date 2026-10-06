@@ -13,6 +13,35 @@ clever migrate --strict        # exit code 1 if blockers remain (CI)
 clever migrate --write         # create the proposed files (never overwrites)
 ```
 
+## Apply the plan
+
+`clever migrate apply` turns the plan into files, without touching Clever Cloud:
+
+```bash
+clever migrate apply                          # auto: new branch if the git repository is clean, a copy otherwise
+clever migrate apply --mode branch            # new branch clever-cloud-migration (--branch to rename it)
+clever migrate apply --mode folder -o ../out  # copy of the project (default: <project>-clever)
+clever migrate apply --dry-run                # show what would be written
+```
+
+| File | Content |
+|---|---|
+| `clevercloud/cron.json` | Scheduled jobs translated from a `crontab` |
+| `.dockerignore` | Created for Docker applications: secrets, git history, local dependencies |
+| `.gitignore` | `.env` and `.env.clever` added when needed |
+| `.env.clever` | Production variables built from `.env` / `env_file`: compose hostnames removed, `development` switched to `production`, missing variables from `.env.example` listed as `TODO`. **Never committed** |
+| `clever-setup.sh` | Creates the application and add-ons, imports `.env.clever`, sets the `CC_*` variables and rebuilds variables such as `DATABASE_URL` from the add-on (`postgresql+psycopg://` scheme kept) |
+| `CLEVER-MIGRATION.md` | Steps, generated files, remaining manual changes and what was handled |
+
+Safety rules:
+
+- the original project is never modified in folder mode, and a branch is only created on a clean repository
+- commits only contain the generated files (any other local change stays uncommitted)
+- existing files are never overwritten, except `.gitignore` which is only appended to
+- nothing is pushed and nothing is created on Clever Cloud: review the branch, then run `./clever-setup.sh`
+
+`clever env import` replaces all the variables of the application, so the script imports `.env.clever` before setting the other variables.
+
 ## Report
 
 Findings are sorted by severity:

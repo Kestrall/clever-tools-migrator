@@ -127,6 +127,7 @@ import { metabaseRestartCommand } from './metabase/metabase.restart.command.js';
 import { metabaseVersionCheckCommand } from './metabase/metabase.version.check.command.js';
 import { metabaseVersionCommand } from './metabase/metabase.version.command.js';
 import { metabaseVersionUpdateCommand } from './metabase/metabase.version.update.command.js';
+import { migrateApplyCommand } from './migrate/migrate.apply.command.js';
 import { migrateCommand } from './migrate/migrate.command.js';
 import { ngCommand } from './ng/ng.command.js';
 import { ngCreateCommand } from './ng/ng.create.command.js';
@@ -429,7 +430,12 @@ export const globalCommands = {
       ],
     },
   ],
-  migrate: migrateCommand,
+  migrate: [
+    migrateCommand,
+    {
+      apply: migrateApplyCommand,
+    },
+  ],
   ng: [
     ngCommand,
     {

@@ -480,7 +480,7 @@ function checkMainService(scanner, report, composePath, main, services, replaced
       unresolved.push(name);
       continue;
     }
-    const rewiring = describeRewiring(name, value, serviceNames, replacedByAddon);
+    const rewiring = describeRewiring(report, name, value, location, serviceNames, replacedByAddon);
     if (rewiring != null) {
       rewired.push(rewiring);
     } else if (!/(SECRET|PASSWORD|TOKEN|PRIVATE|API_KEY)/i.test(name)) {
@@ -496,7 +496,7 @@ function checkMainService(scanner, report, composePath, main, services, replaced
   for (const envFile of main.envFiles) {
     const variables = scanner.readEnvFile(envFile) ?? scanner.readEnvFile(`${envFile}.example`) ?? {};
     for (const [name, value] of Object.entries(variables)) {
-      const rewiring = describeRewiring(name, value, serviceNames, replacedByAddon);
+      const rewiring = describeRewiring(report, name, value, envFile, serviceNames, replacedByAddon);
       if (rewiring != null) {
         rewired.push(`${rewiring} (${envFile})`);
         if (!brokenEnvFiles.includes(envFile)) {
@@ -589,14 +589,16 @@ function checkMainService(scanner, report, composePath, main, services, replaced
 }
 
 /**
- * Describe how a variable pointing to another docker-compose service must be replaced
+ * Describe how a variable pointing to another docker-compose service must be replaced, and record it in the report
+ * @param {MigrationReport} report
  * @param {string} name
  * @param {string} value
+ * @param {string} source
  * @param {string[]} serviceNames
  * @param {Map<string, import('../catalog.js').AddonMapping>} replacedByAddon
  * @returns {string|null} null when the variable does not reference a service
  */
-function describeRewiring(name, value, serviceNames, replacedByAddon) {
+function describeRewiring(report, name, value, source, serviceNames, replacedByAddon) {
   const referencedService = serviceNames.find((serviceName) =>
     new RegExp(`(^|[@/:,])${escapeRegExp(serviceName)}($|[:/?,])`).test(value),
   );
@@ -605,15 +607,19 @@ function describeRewiring(name, value, serviceNames, replacedByAddon) {
   }
   const mapping = replacedByAddon.get(referencedService);
   const role = guessVariableRole(name);
-  const addonVariable = mapping != null && role != null ? mapping.variables[role] : null;
+  const addonVariable = mapping != null && role != null ? (mapping.variables[role] ?? null) : null;
+  // SQLAlchemy-like URLs embed the driver in the scheme, add-on URIs do not
+  const driverScheme = role === 'uri' ? (/^([a-z]+\+[\w-]+):\/\//.exec(value)?.[1] ?? null) : null;
+  const addonName =
+    mapping != null ? (report.addons.find((addon) => addon.provider === mapping.provider)?.name ?? null) : null;
+  report.rewired.push({ name, value, source, service: referencedService, addonName, addonVariable, driverScheme });
+
   if (addonVariable === name) {
     return `${name}=${value} → already injected by the add-on, remove it`;
   }
   if (addonVariable == null) {
     return `${name}=${value} → points to "${referencedService}", use the matching Clever Cloud variable`;
   }
-  // SQLAlchemy-like URLs embed the driver in the scheme, add-on URIs do not
-  const driverScheme = role === 'uri' ? /^([a-z]+\+[\w-]+):\/\//.exec(value)?.[1] : null;
   const schemeHint =
     driverScheme != null ? `, which uses ${value.split('+')[0]}://: convert it to ${driverScheme}:// in code` : '';
   return `${name}=${value} → use ${addonVariable}${schemeHint}`;

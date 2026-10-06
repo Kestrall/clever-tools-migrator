@@ -2833,6 +2833,33 @@ path                          Path of the project to analyze (current directory 
     --write                   Write the proposed configuration files (existing files are never overwritten)
 ```
 
+### migrate apply
+
+**Description:** Prepare the project for Clever Cloud on a new git branch or in a copy of the project
+
+**Since:** Unreleased
+
+**Usage**
+```
+clever migrate apply [<path>] [options]
+```
+
+**Arguments**
+```
+path                          Path of the project to migrate (current directory if not specified) (optional)
+```
+
+**Options**
+```
+    --branch <branch-name>    Name of the branch to create (default: clever-cloud-migration)
+    --dry-run                 Show what would be done without writing anything
+-F, --format <format>         Output format (human, json) (default: human)
+    --mode <mode>             Where to write the changes: a new git branch, a copy of the project, or auto (branch if the git repository is clean, folder otherwise) (auto, branch, folder) (default: auto)
+-n, --name <app-name>         Application name (current directory name by default)
+-o, --output <folder>         Folder of the copy in folder mode (default: <project>-clever next to the project)
+-t, --type <instance-type>    Force the target instance type instead of detecting it
+```
+
 ## ng
 
 **Description:** List Network Groups

@@ -211,7 +211,8 @@ export function checkDatabases(scanner, report) {
       title: `The ${database.label} add-on starts empty: import your schema and data`,
       location: database.addonName ?? undefined,
       fix: [
-        'Review and run `./clever-migrate-data.sh` (dump of the local database, import into the add-on), or use your migrations',
+        'Review and run `./clever-migrate-data.sh`: it imports a SQL file of the project (schema.sql, dump.sql...) or copies the local database',
+        'or create the tables with your migrations',
       ],
     });
   }

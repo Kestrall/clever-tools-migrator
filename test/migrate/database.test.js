@@ -126,6 +126,19 @@ describe('projects already migrated', () => {
   });
 });
 
+describe('data migration', () => {
+  it('offers to import a SQL file of the project when the local database is gone', () => {
+    const directory = createProject({
+      'index.php': '<?php\n$pdo = new PDO("mysql:host=$host;dbname=$dbname", $user, $pass);\n$host = "localhost";\n',
+      'schema.sql': 'CREATE TABLE links (id INT PRIMARY KEY);\n',
+    });
+    const script = plan(directory).files.get('clever-migrate-data.sh')?.content ?? '';
+    assert.match(script, /^SCHEMA_FILE=schema\.sql$/m);
+    assert.match(script, /^if \[ "\$\{MYSQL_SOURCE:-file\}" = local \]; then$/m);
+    assert.match(script, /^ {2}cp "\$SCHEMA_FILE" "\$DUMP_DIR\/mysql-addon\.dump"$/m);
+  });
+});
+
 describe('database variables of .env files', () => {
   it('rewires Laravel DB_* variables', () => {
     const { report, files } = plan(path.join(fixtures, 'laravel'));

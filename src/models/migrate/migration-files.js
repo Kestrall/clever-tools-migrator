@@ -793,7 +793,9 @@ function buildDataScript(scanner, report) {
     const key = engine.label.toUpperCase();
     const name = shellQuote(addon.name);
     const dump = `"$DUMP_DIR/${addon.provider}.dump"`;
-    lines.push(`echo "→ ${engine.label}: local database → add-on ${addon.name}"`);
+    const schemaFile = addon.provider === 'mongodb-addon' ? null : findSchemaFile(scanner);
+    lines.push(`echo "→ ${engine.label} → add-on ${addon.name}"`);
+    const dumpStart = lines.length;
 
     if (local.composeService != null) {
       lines.push(
@@ -840,8 +842,26 @@ function buildDataScript(scanner, report) {
       }
     }
 
+    // A SQL file of the project (schema, dump) is an alternative to the local database, which may not exist anymore
+    if (schemaFile != null) {
+      const dumpLines = lines.splice(dumpStart).map((line) => `  ${line}`);
+      const sourceVariable = `${key}_SOURCE`;
+      lines.push(
+        `SCHEMA_FILE=${shellQuote(schemaFile)}`,
+        `${sourceVariable}="\${${sourceVariable}:-}"`,
+        `if [ -z "$${sourceVariable}" ]; then`,
+        `  read -r -p "Import $SCHEMA_FILE (file) or copy the local database (local)? [file] " ${sourceVariable}`,
+        'fi',
+        `if [ "\${${sourceVariable}:-file}" = local ]; then`,
+        ...dumpLines,
+        'else',
+        `  cp "$SCHEMA_FILE" ${dump}`,
+        'fi',
+      );
+    }
+
     lines.push(
-      `echo "  dump: $(du -h ${dump} | cut -f1)"`,
+      `echo "  SQL to import: $(du -h ${dump} | cut -f1)"`,
       `if confirm "Import it into the ${addon.name} add-on? Existing tables with the same names are replaced"; then`,
     );
     // Read every add-on variable first: a failure inside a command argument would not stop the script
@@ -885,3 +905,28 @@ const EXISTENCE_FUNCTIONS = [
   `  clever addon list --format json | node -e 'const addons = JSON.parse(require("fs").readFileSync(0, "utf8")); process.exit(addons.some((addon) => addon.name === process.argv[1]) ? 0 : 1)' "$1"`,
   '}',
 ];
+
+/** SQL files usually holding the schema (and maybe data) of a project, most specific first */
+const SCHEMA_FILES = [
+  'schema.sql',
+  'database.sql',
+  'db.sql',
+  'structure.sql',
+  'dump.sql',
+  'init.sql',
+  'database/schema.sql',
+  'db/schema.sql',
+  'sql/schema.sql',
+  'sql/init.sql',
+  'docker/init.sql',
+  'docker/mysql/init.sql',
+  'docker/postgres/init.sql',
+];
+
+/**
+ * @param {ProjectScanner} scanner
+ * @returns {string|null}
+ */
+export function findSchemaFile(scanner) {
+  return scanner.first(SCHEMA_FILES) ?? scanner.find(/^[^/]+\.sql$/)[0] ?? null;
+}

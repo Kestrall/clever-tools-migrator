@@ -1,0 +1,38 @@
+services:
+  api:
+    build: .
+    ports:
+      - '3000:3000'
+    environment:
+      DATABASE_URL: postgres://app:secret@db:5432/app
+      REDIS_HOST: cache
+      LOG_LEVEL: info
+      JWT_SECRET: ${JWT_SECRET}
+    env_file: .env
+    volumes:
+      - uploads:/app/uploads
+    depends_on: [db, cache]
+  worker:
+    build: .
+    command: node dist/worker.js
+    environment:
+      DATABASE_URL: postgres://app:secret@db:5432/app
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: secret
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+  cache:
+    image: redis:7-alpine
+  proxy:
+    image: nginx:1.27
+    ports: ['80:80', '443:443']
+  adminer:
+    image: adminer
+  mq:
+    image: rabbitmq:3-management
+volumes:
+  uploads:
+  pgdata:

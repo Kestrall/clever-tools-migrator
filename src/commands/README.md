@@ -47,6 +47,7 @@ These options are available for all commands:
 |[`clever make-default`](./make-default/make-default.docs.md)|Make a linked application the default one|
 |[`clever matomo`](./matomo/matomo.docs.md)|Manage Clever Cloud Matomo services|
 |[`clever metabase`](./metabase/metabase.docs.md)|Manage Clever Cloud Metabase services|
+|[`clever migrate`](./migrate/migrate.docs.md)|Analyze a project and list what is missing to deploy it on Clever Cloud|
 |[`clever ng`](./ng/ng.docs.md)|List Network Groups|
 |[`clever oauth-consumers`](./oauth-consumers/oauth-consumers.docs.md)|Manage OAuth consumers used with a Clever Cloud login|
 |[`clever notify-email`](./notify-email/notify-email.docs.md)|Manage email notifications|

@@ -1,0 +1,7 @@
+{
+  "require": {
+    "php": ">=8.2",
+    "symfony/framework-bundle": "7.1.*",
+    "doctrine/doctrine-migrations-bundle": "^3.3"
+  }
+}

@@ -2808,6 +2808,31 @@ addon-id|addon-name       Add-on ID (or name, if unambiguous)
     --target <version>    Target version to upgrade to (e.g.: 24, 2.4, 2.4.1)
 ```
 
+## migrate
+
+**Description:** Analyze a project and list what is missing to deploy it on Clever Cloud
+
+**Since:** Unreleased
+
+**Usage**
+```
+clever migrate [<path>] [options]
+```
+
+**Arguments**
+```
+path                          Path of the project to analyze (current directory if not specified) (optional)
+```
+
+**Options**
+```
+-F, --format <format>         Output format (human, json) (default: human)
+-n, --name <app-name>         Application name used in the migration plan (current directory name by default)
+    --strict                  Exit with code 1 if blockers are found (useful in CI)
+-t, --type <instance-type>    Force the target instance type instead of detecting it
+    --write                   Write the proposed configuration files (existing files are never overwritten)
+```
+
 ## ng
 
 **Description:** List Network Groups

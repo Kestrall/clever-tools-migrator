@@ -167,6 +167,27 @@ export class ProjectScanner {
   }
 
   /**
+   * Parse a dotenv file
+   * @param {string} relativePath
+   * @returns {Record<string, string>|null}
+   */
+  readEnvFile(relativePath) {
+    const content = this.read(relativePath);
+    if (content == null) {
+      return null;
+    }
+    /** @type {Record<string, string>} */
+    const variables = {};
+    for (const line of content.split(/\r?\n/)) {
+      const match = /^\s*(?:export\s+)?([A-Za-z_][\w.]*)\s*=\s*(.*?)\s*$/.exec(line);
+      if (match != null) {
+        variables[match[1]] = match[2].replace(/^(['"])(.*)\1$/, '$2');
+      }
+    }
+    return variables;
+  }
+
+  /**
    * @param {RegExp} pattern tested against the relative path
    * @returns {string[]}
    */

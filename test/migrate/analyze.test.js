@@ -91,6 +91,27 @@ describe('analyzeProject', () => {
     assert.equal(severityOf(report, 'code.localhost-service'), 'warning');
   });
 
+  it('reads env_file content and SQLAlchemy driver URLs', () => {
+    const report = analyzeProject(path.join(fixtures, 'fastapi-compose'));
+    assert.equal(report.runtime.type, 'docker');
+    const hostnames = report.findings.find((finding) => finding.id === 'compose.service-hostnames');
+    assert.match(
+      hostnames?.details ?? '',
+      /DATABASE_URL=postgresql\+psycopg:.* → use POSTGRESQL_ADDON_URI, which uses postgresql:\/\/.*\(\.env\)/,
+    );
+    assert.match(hostnames?.fix?.join('\n') ?? '', /Remove these variables from \.env/);
+    assert.equal(severityOf(report, 'env.dev-values'), 'warning');
+    // localhost in CI pipelines is expected
+    assert.ok(!report.findings.some((finding) => finding.location?.startsWith('.github/')));
+  });
+
+  it('runs Alembic migrations on the native Python runtime', () => {
+    const report = analyzeProject(path.join(fixtures, 'fastapi-compose'), { type: 'python' });
+    assert.equal(report.env.CC_PYTHON_MODULE.value, 'app.main:app');
+    assert.equal(report.env.CC_PYTHON_BACKEND.value, 'uvicorn');
+    assert.equal(report.env.CC_PRE_RUN_HOOK.value, 'alembic upgrade head');
+  });
+
   it('configures Symfony', () => {
     const report = analyzeProject(path.join(fixtures, 'symfony'));
     assert.equal(report.runtime.type, 'php');

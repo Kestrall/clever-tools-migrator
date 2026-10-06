@@ -448,6 +448,17 @@ function checkPython(scanner, report) {
     }
   }
 
+  if (scanner.has('alembic.ini')) {
+    report.setEnv('CC_PRE_RUN_HOOK', 'alembic upgrade head', 'Alembic migrations before start');
+    report.add({
+      id: 'python.alembic',
+      severity: 'warning',
+      title: 'Alembic migrations are not run automatically',
+      location: 'alembic.ini',
+      fix: ['`clever env set CC_PRE_RUN_HOOK "alembic upgrade head"`'],
+    });
+  }
+
   const dependencies = [scanner.read('requirements.txt'), scanner.read('pyproject.toml'), scanner.read('Pipfile')]
     .filter((content) => content != null)
     .join('\n')

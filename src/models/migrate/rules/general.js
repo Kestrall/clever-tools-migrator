@@ -60,6 +60,33 @@ export function checkRepository(scanner, report) {
     }
   }
 
+  // Values that only make sense on a developer machine
+  for (const envFile of envFiles) {
+    const variables = scanner.readEnvFile(envFile) ?? {};
+    const localUrls = Object.entries(variables).filter(
+      ([name, value]) =>
+        /^https?:\/\/(localhost|127\.0\.0\.1)\b/.test(value) && !/(DATABASE|DB_|REDIS|MONGO|AMQP)/.test(name),
+    );
+    const devModes = Object.entries(variables).filter(
+      ([name, value]) =>
+        /^(ENV|ENVIRONMENT|APP_ENV|NODE_ENV|RAILS_ENV|FLASK_ENV|MIX_ENV)$/.test(name) &&
+        /^(dev|development|local|debug)$/i.test(value),
+    );
+    if (localUrls.length > 0 || devModes.length > 0) {
+      report.add({
+        id: 'env.dev-values',
+        severity: 'warning',
+        title: `${envFile} contains development values that must not be imported as is`,
+        details: [...localUrls, ...devModes].map(([name, value]) => `${name}=${value}`).join('\n'),
+        location: envFile,
+        fix: [
+          ...localUrls.map(([name]) => `\`clever env set ${name} https://<your-app>.cleverapps.io\` (or your domain)`),
+          ...devModes.map(([name]) => `\`clever env set ${name} production\``),
+        ],
+      });
+    }
+  }
+
   const exampleFile = scanner.first(['.env.example', '.env.dist', '.env.sample', '.env.template']);
   if (exampleFile != null) {
     const variables = (scanner.read(exampleFile) ?? '')
@@ -174,13 +201,19 @@ function checkProcfile(scanner, report, runtimeType) {
  * @param {string|null} runtimeType
  */
 export function checkSourceCode(scanner, report, runtimeType) {
+  // CI pipelines and compose files legitimately talk to local services
   const files = [
     ...scanner.sourceFiles,
-    ...scanner.configFiles.filter((file) => !/(^|\/)(docker-)?compose[\w.-]*\.ya?ml$/.test(file)),
+    ...scanner.configFiles.filter(
+      (file) =>
+        !/(^|\/)(docker-)?compose[\w.-]*\.ya?ml$|^\.(github|gitlab|circleci|woodpecker)\/|^\.gitlab-ci\.yml$/.test(
+          file,
+        ),
+    ),
   ];
 
   const localServiceUrls = scanner.grep(
-    /\b(postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss|amqp|nats):\/\/[^\s'"`]*?(localhost|127\.0\.0\.1|0\.0\.0\.0)\b/,
+    /\b(postgres(?:ql)?|mysql|mariadb|mongodb|redis|rediss|amqp|nats)(?:\+[\w-]+)?:\/\/[^\s'"`]*?(localhost|127\.0\.0\.1|0\.0\.0\.0)\b/,
     files,
   );
   for (const result of localServiceUrls.slice(0, 5)) {

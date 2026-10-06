@@ -453,12 +453,13 @@ export function checkCompose(scanner, report, composePath, { isDockerRuntime }) 
   }
 
   if (main != null) {
-    checkMainService(report, composePath, main, services, replacedByAddon, { isDockerRuntime });
+    checkMainService(scanner, report, composePath, main, services, replacedByAddon, { isDockerRuntime });
   }
   return main;
 }
 
 /**
+ * @param {ProjectScanner} scanner
  * @param {MigrationReport} report
  * @param {string} composePath
  * @param {ComposeService} main
@@ -466,7 +467,7 @@ export function checkCompose(scanner, report, composePath, { isDockerRuntime }) 
  * @param {Map<string, import('../catalog.js').AddonMapping>} replacedByAddon
  * @param {{ isDockerRuntime: boolean }} options
  */
-function checkMainService(report, composePath, main, services, replacedByAddon, { isDockerRuntime }) {
+function checkMainService(scanner, report, composePath, main, services, replacedByAddon, { isDockerRuntime }) {
   const location = `${composePath} (service "${main.name}")`;
   const serviceNames = services.map((service) => service.name);
 
@@ -479,26 +480,29 @@ function checkMainService(report, composePath, main, services, replacedByAddon, 
       unresolved.push(name);
       continue;
     }
-    const referencedService = serviceNames.find((serviceName) =>
-      new RegExp(`(^|[@/:,])${escapeRegExp(serviceName)}($|[:/?,])`).test(value),
-    );
-    if (referencedService == null) {
-      if (!/(SECRET|PASSWORD|TOKEN|PRIVATE|API_KEY)/i.test(name)) {
-        report.setEnv(name, value, `Copied from ${location}`);
-      } else {
-        unresolved.push(name);
-      }
-      continue;
-    }
-    const mapping = replacedByAddon.get(referencedService);
-    const role = guessVariableRole(name);
-    const addonVariable = mapping != null && role != null ? mapping.variables[role] : null;
-    if (addonVariable === name) {
-      rewired.push(`${name}=${value} → already injected by the add-on, remove it`);
-    } else if (addonVariable != null) {
-      rewired.push(`${name}=${value} → use ${addonVariable}`);
+    const rewiring = describeRewiring(name, value, serviceNames, replacedByAddon);
+    if (rewiring != null) {
+      rewired.push(rewiring);
+    } else if (!/(SECRET|PASSWORD|TOKEN|PRIVATE|API_KEY)/i.test(name)) {
+      report.setEnv(name, value, `Copied from ${location}`);
     } else {
-      rewired.push(`${name}=${value} → points to "${referencedService}", use the matching Clever Cloud variable`);
+      unresolved.push(name);
+    }
+  }
+
+  // env_file content is imported as is, so it must not reference other services either
+  /** @type {string[]} */
+  const brokenEnvFiles = [];
+  for (const envFile of main.envFiles) {
+    const variables = scanner.readEnvFile(envFile) ?? scanner.readEnvFile(`${envFile}.example`) ?? {};
+    for (const [name, value] of Object.entries(variables)) {
+      const rewiring = describeRewiring(name, value, serviceNames, replacedByAddon);
+      if (rewiring != null) {
+        rewired.push(`${rewiring} (${envFile})`);
+        if (!brokenEnvFiles.includes(envFile)) {
+          brokenEnvFiles.push(envFile);
+        }
+      }
     }
   }
 
@@ -511,6 +515,7 @@ function checkMainService(report, composePath, main, services, replacedByAddon, 
       location,
       fix: [
         'Read the add-on variables in your code (e.g. process.env.POSTGRESQL_ADDON_URI), or copy their values with `clever env` once the add-on is linked',
+        ...brokenEnvFiles.map((file) => `Remove these variables from ${file} before \`clever env import < ${file}\``),
       ],
     });
   }
@@ -581,6 +586,37 @@ function checkMainService(report, composePath, main, services, replacedByAddon, 
       fix: ['Move this command into the CMD of the Dockerfile'],
     });
   }
+}
+
+/**
+ * Describe how a variable pointing to another docker-compose service must be replaced
+ * @param {string} name
+ * @param {string} value
+ * @param {string[]} serviceNames
+ * @param {Map<string, import('../catalog.js').AddonMapping>} replacedByAddon
+ * @returns {string|null} null when the variable does not reference a service
+ */
+function describeRewiring(name, value, serviceNames, replacedByAddon) {
+  const referencedService = serviceNames.find((serviceName) =>
+    new RegExp(`(^|[@/:,])${escapeRegExp(serviceName)}($|[:/?,])`).test(value),
+  );
+  if (referencedService == null) {
+    return null;
+  }
+  const mapping = replacedByAddon.get(referencedService);
+  const role = guessVariableRole(name);
+  const addonVariable = mapping != null && role != null ? mapping.variables[role] : null;
+  if (addonVariable === name) {
+    return `${name}=${value} → already injected by the add-on, remove it`;
+  }
+  if (addonVariable == null) {
+    return `${name}=${value} → points to "${referencedService}", use the matching Clever Cloud variable`;
+  }
+  // SQLAlchemy-like URLs embed the driver in the scheme, add-on URIs do not
+  const driverScheme = role === 'uri' ? /^([a-z]+\+[\w-]+):\/\//.exec(value)?.[1] : null;
+  const schemeHint =
+    driverScheme != null ? `, which uses ${value.split('+')[0]}://: convert it to ${driverScheme}:// in code` : '';
+  return `${name}=${value} → use ${addonVariable}${schemeHint}`;
 }
 
 /**

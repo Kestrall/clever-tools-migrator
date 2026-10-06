@@ -105,6 +105,27 @@ describe('hard-coded PHP credentials', () => {
   });
 });
 
+describe('projects already migrated', () => {
+  it('finds the local database behind getenv() fallbacks and reuses the linked application', () => {
+    const directory = createProject({
+      '.clever.json': JSON.stringify({ apps: [{ app_id: 'app_1', alias: 'shop', name: 'shop' }] }),
+      'index.php': '<?php require "config.php";\n',
+      'config.php':
+        "<?php\n$host = getenv('MYSQL_ADDON_HOST') ?: 'localhost';\n$dbname = getenv('MYSQL_ADDON_DB') ?: 'shop_local';\n$pdo = new PDO(\"mysql:host=$host;dbname=$dbname\", 'root', '');\n",
+    });
+    const { report, files } = plan(directory);
+    assert.equal(report.appName, 'shop');
+    assert.ok(!report.findings.some((finding) => finding.id === 'database.hardcoded-credentials'));
+    assert.match(
+      files.get('clever-migrate-data.sh')?.content ?? '',
+      /LOCAL_MYSQL_DB="\$\{LOCAL_MYSQL_DB:-shop_local\}"/,
+    );
+    const setup = files.get('clever-setup.sh')?.content ?? '';
+    assert.match(setup, /^APP=shop$/m);
+    assert.match(setup, /^if addon_exists shop-mysql; then$/m);
+  });
+});
+
 describe('database variables of .env files', () => {
   it('rewires Laravel DB_* variables', () => {
     const { report, files } = plan(path.join(fixtures, 'laravel'));

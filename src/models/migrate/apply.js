@@ -49,6 +49,7 @@ const COMMIT_MESSAGES = {
  * @property {'branch'|'folder'} mode
  * @property {string} targetPath
  * @property {string|null} branch
+ * @property {'new'|'current'|'switched'} branchStatus whether the branch was created or reused
  * @property {string[]} commits
  * @property {Array<import('./migration-files.js').PlannedChange & { status: 'written'|'skipped', reason?: string }>} changes
  * @property {import('./report.js').Finding[]} todo
@@ -75,8 +76,15 @@ export async function applyMigration(projectPath, options) {
     if (!git.isClean) {
       throw new Error('The working tree has uncommitted changes: commit or stash them, or use --mode folder');
     }
-    if (await branchExists(sourcePath, options.branch)) {
-      throw new Error(`Branch "${options.branch}" already exists, choose another one with --branch`);
+  }
+
+  // An existing branch is reused: switch to it before the analysis, so that the plan starts from its content
+  let branchStatus = /** @type {'new'|'current'|'switched'} */ ('new');
+  if (mode === 'branch' && (await branchExists(sourcePath, options.branch))) {
+    const currentBranch = (await runGit(sourcePath, ['branch', '--show-current'])).trim();
+    branchStatus = currentBranch === options.branch ? 'current' : 'switched';
+    if (branchStatus === 'switched' && !options.dryRun) {
+      await runGit(sourcePath, ['checkout', '--quiet', options.branch]);
     }
   }
 
@@ -103,6 +111,7 @@ export async function applyMigration(projectPath, options) {
     mode,
     targetPath,
     branch: null,
+    branchStatus,
     commits: [],
     changes: changes.map((change) => ({ ...change, status: 'written' })),
     todo,
@@ -140,8 +149,13 @@ export async function applyMigration(projectPath, options) {
 
   const targetGit = mode === 'branch' ? git : await getGitState(targetPath);
   if (targetGit.isRepository) {
-    await runGit(targetPath, ['checkout', '-b', options.branch]);
-    result.branch = options.branch;
+    if (branchStatus === 'new') {
+      // In a copy, the branch may already exist with other changes: use a free name instead of mixing them
+      result.branch = mode === 'folder' ? await findFreeBranchName(targetPath, options.branch) : options.branch;
+      await runGit(targetPath, ['checkout', '--quiet', '-b', result.branch]);
+    } else {
+      result.branch = options.branch;
+    }
     for (const group of /** @type {const} */ (['config', 'code', 'setup'])) {
       const paths = result.changes
         .filter((change) => change.group === group && change.status === 'written')
@@ -150,6 +164,14 @@ export async function applyMigration(projectPath, options) {
         continue;
       }
       await runGit(targetPath, ['add', '--', ...paths]);
+      // Running apply again may produce the same files: no empty commit
+      const hasChanges = await runGit(targetPath, ['diff', '--cached', '--quiet', '--', ...paths]).then(
+        () => false,
+        () => true,
+      );
+      if (!hasChanges) {
+        continue;
+      }
       // Committing explicit paths keeps any other local change out of the commit
       await runGit(targetPath, ['commit', '--no-verify', '-m', COMMIT_MESSAGES[group], '--', ...paths]);
       result.commits.push(COMMIT_MESSAGES[group]);
@@ -187,8 +209,22 @@ async function getGitState(directory) {
   } catch {
     return { isRepository: false, isClean: false };
   }
-  const status = await runGit(directory, ['status', '--porcelain', '--', '.']);
+  // Untracked files (like a previous .env.clever) neither block a checkout nor end up in our commits
+  const status = await runGit(directory, ['status', '--porcelain', '--untracked-files=no', '--', '.']);
   return { isRepository: true, isClean: status.trim() === '' };
+}
+
+/**
+ * @param {string} directory
+ * @param {string} branch
+ * @returns {Promise<string>}
+ */
+async function findFreeBranchName(directory, branch) {
+  let candidate = branch;
+  for (let index = 2; await branchExists(directory, candidate); index++) {
+    candidate = `${branch}-${index}`;
+  }
+  return candidate;
 }
 
 /**

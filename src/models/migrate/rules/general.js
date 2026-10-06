@@ -25,6 +25,10 @@ export function checkRepository(scanner, report) {
 
   if (scanner.has('.clever.json')) {
     const linked = scanner.readJson('.clever.json')?.apps ?? [];
+    const sameName = linked.find(
+      (/** @type {any} */ app) => app.alias === report.appName || app.name === report.appName,
+    );
+    report.linkedApp = (sameName ?? linked[0])?.alias ?? null;
     report.add({
       id: 'clever.linked',
       severity: 'info',

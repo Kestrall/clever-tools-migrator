@@ -105,28 +105,33 @@ export const migrateApplyCommand = defineCommand({
       return;
     }
 
-    printResult(result, dryRun);
+    printResult(result, dryRun, branch);
   },
 });
 
 /**
  * @param {import('../../models/migrate/apply.js').ApplyResult} result
  * @param {boolean} dryRun
+ * @param {string} branch requested branch name
  */
-function printResult(result, dryRun) {
+function printResult(result, dryRun, branch) {
+  const branchLabel = {
+    new: 'on a new branch',
+    current: 'on the existing branch',
+    switched: 'on the existing branch (switched to it)',
+  }[result.branchStatus];
   const where =
     result.mode === 'branch'
-      ? `on a new branch ${styleText('blue', result.branch ?? '')}`
-      : `in a copy: ${styleText('blue', result.targetPath)}`;
+      ? `${branchLabel} ${styleText('blue', result.branch ?? '')}`
+      : `in a copy: ${styleText('blue', result.targetPath)}${result.branch != null ? ` (branch ${result.branch})` : ''}`;
 
   Logger.println('');
   if (dryRun) {
-    Logger.println(
-      styleText(
-        'bold',
-        `Dry run: the changes would be written ${result.mode === 'branch' ? 'on a new branch' : `in ${result.targetPath}`}`,
-      ),
-    );
+    const dryRunTarget =
+      result.mode === 'branch'
+        ? `${result.branchStatus === 'new' ? 'on a new branch' : 'on the existing branch'} ${branch}`
+        : `in ${result.targetPath}`;
+    Logger.println(styleText('bold', `Dry run: the changes would be written ${dryRunTarget}`));
   } else {
     Logger.printSuccess(`Project prepared for Clever Cloud ${where}`);
   }

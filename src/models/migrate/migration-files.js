@@ -386,7 +386,7 @@ function buildSetupScript(report, hasEnvClever) {
     'set -euo pipefail',
     'cd "$(dirname "$0")"',
     '',
-    `APP=${shellQuote(app)}`,
+    `APP=${shellQuote(report.linkedApp ?? app)}`,
     '',
   ];
 
@@ -399,15 +399,32 @@ function buildSetupScript(report, hasEnvClever) {
     return lines.join('\n');
   }
 
-  lines.push('echo "→ Application"', `clever create --type ${report.runtime.type} "$APP"`, '');
+  // The script can be run again: existing application and add-ons are reused
+  lines.push(
+    ...EXISTENCE_FUNCTIONS,
+    '',
+    'echo "→ Application"',
+    'if app_linked "$APP"; then',
+    '  echo "  $APP is already linked (.clever.json), reusing it"',
+    'else',
+    `  clever create --type ${report.runtime.type} "$APP"`,
+    'fi',
+    '',
+  );
 
   if (report.addons.length > 0) {
     lines.push('echo "→ Add-ons"');
     for (const addon of report.addons) {
       const origin = addon.fromService != null ? ` (replaces the "${addon.fromService}" service)` : '';
+      const name = shellQuote(addon.name);
       lines.push(
         `# ${addon.label}${origin}`,
-        `clever addon create ${addon.provider} ${shellQuote(addon.name)} --link "$APP"`,
+        `if addon_exists ${name}; then`,
+        `  echo "  ${addon.name} already exists, linking it"`,
+        `  clever service link-addon ${name} --alias "$APP" >/dev/null 2>&1 || true`,
+        'else',
+        `  clever addon create ${addon.provider} ${name} --link "$APP"`,
+        'fi',
       );
     }
     lines.push('');
@@ -671,6 +688,16 @@ function findLocalDatabase(scanner, report, provider) {
       }
     }
   }
+  // Code already reading the add-on variables keeps the local values as fallback: getenv('MYSQL_ADDON_DB') ?: 'shop'
+  const roles = getRoles(provider);
+  const fallbackPattern =
+    /(?:getenv\(|process\.env\.|os\.getenv\(|os\.environ\.get\()\s*['"]?([A-Z]+_ADDON_[A-Z]+)['"]?\s*\)?\s*(?:\?:|\|\||\?\?|,)\s*['"]([^'"]*)['"]/;
+  for (const result of scanner.grep(fallbackPattern)) {
+    const role = Object.entries(roles).find(([, name]) => name === result.match[1])?.[0];
+    if (role != null && result.match[2] !== '') {
+      local[/** @type {'host'|'port'|'database'|'user'} */ (role)] = result.match[2];
+    }
+  }
   for (const connection of findHardcodedPhpConnections(scanner).filter(
     (candidate) => candidate.engine.provider === provider,
   )) {
@@ -848,3 +875,13 @@ function buildDataScript(scanner, report) {
   lines.push('echo "Done. Restart the application to use the data: clever restart"', '');
   return lines.join('\n');
 }
+
+/** Bash functions telling whether the application is linked and whether an add-on exists */
+const EXISTENCE_FUNCTIONS = [
+  'app_linked() {',
+  `  [ -f .clever.json ] && node -e 'const config = JSON.parse(require("fs").readFileSync(".clever.json", "utf8")); process.exit((config.apps ?? []).some((app) => app.alias === process.argv[1]) ? 0 : 1)' "$1"`,
+  '}',
+  'addon_exists() {',
+  `  clever addon list --format json | node -e 'const addons = JSON.parse(require("fs").readFileSync(0, "utf8")); process.exit(addons.some((addon) => addon.name === process.argv[1]) ? 0 : 1)' "$1"`,
+  '}',
+];

@@ -80,8 +80,8 @@ describe('planMigrationFiles', () => {
   it('writes a setup script rebuilding variables from add-ons', () => {
     const script = changes.get('clever-setup.sh')?.content ?? '';
     assert.ok(changes.get('clever-setup.sh')?.executable);
-    assert.match(script, /^clever create --type docker "\$APP"$/m);
-    assert.match(script, /^clever addon create postgresql-addon fastapi-compose-postgresql --link "\$APP"$/m);
+    assert.match(script, /^  clever create --type docker "\$APP"$/m);
+    assert.match(script, /^  clever addon create postgresql-addon fastapi-compose-postgresql --link "\$APP"$/m);
     // The import replaces every variable, so it must come before the other ones
     assert.ok(
       script.indexOf('clever env import < .env.clever') <
@@ -143,10 +143,41 @@ describe('applyMigration', () => {
     assert.equal(fs.statSync(path.join(directory, 'clever-setup.sh')).mode & 0o111, 0o111);
   });
 
-  it('refuses to reuse an existing branch', async () => {
+  it('reuses an existing branch instead of failing', async () => {
+    const directory = copyFixture('fastapi-compose', { git: true });
+    const first = await applyMigration(directory, options);
+    assert.equal(first.branchStatus, 'new');
+
+    // Running again on the same branch only refreshes the guide (fewer things left to do)...
+    const again = await applyMigration(directory, options);
+    assert.equal(again.branchStatus, 'current');
+    assert.deepEqual(again.commits, ['docs(clever): add Clever Cloud setup script and migration guide']);
+    // ...and once up to date, no empty commit
+    const unchanged = await applyMigration(directory, options);
+    assert.deepEqual(unchanged.commits, []);
+
+    // From another branch: switch to the existing one and add the new changes on top
+    git(directory, 'checkout', '-q', 'main');
+    fs.appendFileSync(path.join(directory, 'crontab'), '0 * * * * python -m app.cleanup\n');
+    git(directory, 'add', 'crontab');
+    git(directory, 'commit', '-q', '-m', 'add crontab');
+    git(directory, 'checkout', '-q', 'clever-cloud-migration');
+    git(directory, 'merge', '-q', 'main', '-m', 'merge main');
+    git(directory, 'checkout', '-q', 'main');
+    const switched = await applyMigration(directory, options);
+    assert.equal(switched.branchStatus, 'switched');
+    assert.equal(git(directory, 'branch', '--show-current').trim(), 'clever-cloud-migration');
+    assert.ok(fs.existsSync(path.join(directory, 'clevercloud/cron.json')));
+    assert.equal(git(directory, 'status', '--porcelain'), '');
+  });
+
+  it('uses a free branch name in a copy', async () => {
     const directory = copyFixture('fastapi-compose', { git: true });
     git(directory, 'branch', 'clever-cloud-migration');
-    await assert.rejects(applyMigration(directory, options), /already exists/);
+    fs.appendFileSync(path.join(directory, 'app/main.py'), '# work in progress\n');
+    const result = await applyMigration(directory, options);
+    assert.equal(result.mode, 'folder');
+    assert.equal(result.branch, 'clever-cloud-migration-2');
   });
 
   it('works on a copy when the repository has uncommitted changes', async () => {

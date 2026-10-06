@@ -94,6 +94,8 @@ export class MigrationReport {
     this.devValues = [];
     /** @type {DetectedDatabase[]} */
     this.databases = [];
+    /** @type {string|null} alias of the application already linked in .clever.json */
+    this.linkedApp = null;
   }
 
   /**

@@ -15,7 +15,12 @@ import { checkRuntime, detectRuntimes } from './rules/runtimes.js';
  */
 export function analyzeProject(projectPath, options = {}) {
   const scanner = new ProjectScanner(projectPath);
-  const appName = options.appName ?? (slugify(path.basename(scanner.root)).toLowerCase() || 'my-app');
+  // An application already linked with `clever link` / `clever create` keeps its name
+  const linkedAlias = scanner.readJson('.clever.json')?.apps?.[0]?.alias;
+  const appName =
+    options.appName ??
+    (typeof linkedAlias === 'string' ? linkedAlias : null) ??
+    (slugify(path.basename(scanner.root)).toLowerCase() || 'my-app');
   const report = new MigrationReport(scanner.root, appName);
 
   if (scanner.files.length === 0) {

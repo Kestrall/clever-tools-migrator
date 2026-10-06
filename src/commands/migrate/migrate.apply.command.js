@@ -8,7 +8,7 @@ import { styleText } from '../../lib/style-text.js';
 import { Logger } from '../../logger.js';
 import { listAvailableTypes } from '../../models/application.js';
 import { applyMigration } from '../../models/migrate/apply.js';
-import { ENV_FILE, MIGRATION_GUIDE, SETUP_SCRIPT } from '../../models/migrate/migration-files.js';
+import { DATA_SCRIPT, ENV_FILE, MIGRATION_GUIDE, SETUP_SCRIPT } from '../../models/migrate/migration-files.js';
 import { humanJsonOutputFormatOption } from '../global.options.js';
 
 export const migrateApplyCommand = defineCommand({
@@ -167,11 +167,14 @@ function printResult(result, dryRun, branch) {
     }
   }
 
-  if (result.commits.length > 0) {
+  if (result.branch != null && !dryRun) {
     Logger.println('');
     Logger.println(styleText('bold', 'Commits'));
     for (const commit of result.commits) {
       Logger.println(`  ${styleText('green', '•')} ${commit}`);
+    }
+    if (result.commits.length === 0) {
+      Logger.println(styleText('grey', `  none: ${result.branch} was already up to date`));
     }
   }
 
@@ -190,11 +193,14 @@ function printResult(result, dryRun, branch) {
   }
 
   const hasEnvFile = result.changes.some((change) => change.path === ENV_FILE && change.status === 'written');
+  const hasDataScript = result.changes.some((change) => change.path === DATA_SCRIPT && change.status === 'written');
   const steps = [
     ...(result.mode === 'folder' ? [`cd ${result.targetPath}`] : []),
     ...(hasEnvFile ? [`Review ${ENV_FILE} and fill the TODO lines`] : []),
     `Review and run ./${SETUP_SCRIPT}`,
-    'git add . && git commit -m "Prepare deployment on Clever Cloud"',
+    ...(hasDataScript ? [`./${DATA_SCRIPT}  # copy your data into the add-ons`] : []),
+    // On a branch, the generated files are already committed
+    ...(result.branch == null ? ['git init && git add . && git commit -m "Prepare deployment on Clever Cloud"'] : []),
     'clever deploy',
   ];
   Logger.println('');

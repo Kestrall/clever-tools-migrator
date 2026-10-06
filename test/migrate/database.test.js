@@ -141,7 +141,11 @@ describe('existing add-ons on Clever Cloud', () => {
     assert.equal(report.findings.find((finding) => finding.id === 'database.import-data')?.severity, 'info');
     assert.equal(report.addons[0].name, 'shop-db');
     assert.ok(!report.commands.some((command) => /clever (create|addon create)/.test(command)));
-    assert.equal(report.counts.blocker, 0);
+    // Only the missing git repository of the temporary project remains
+    assert.deepEqual(
+      report.findings.filter((finding) => finding.severity === 'blocker').map((finding) => finding.id),
+      ['git.missing'],
+    );
   });
 
   it('asks to link an existing add-on', () => {

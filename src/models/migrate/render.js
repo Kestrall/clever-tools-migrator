@@ -108,7 +108,13 @@ function renderPlan(report) {
     lines.push('', `  ${styleText('bold', 'Add-ons')}`);
     for (const addon of report.addons) {
       const origin = addon.fromService != null ? styleText('grey', ` (replaces "${addon.fromService}")`) : '';
-      lines.push(`    ${styleText('blue', addon.provider)} ${addon.name}${origin}`);
+      const status =
+        addon.existing === 'linked'
+          ? styleText('green', ' ✓ already linked')
+          : addon.existing === 'unlinked'
+            ? styleText('yellow', ' exists, not linked')
+            : '';
+      lines.push(`    ${styleText('blue', addon.provider)} ${addon.name}${origin}${status}`);
     }
   }
 

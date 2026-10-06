@@ -2828,6 +2828,7 @@ path                          Path of the project to analyze (current directory 
 ```
 -F, --format <format>         Output format (human, json) (default: human)
 -n, --name <app-name>         Application name used in the migration plan (current directory name by default)
+    --offline                 Do not query Clever Cloud for the add-ons that already exist
     --strict                  Exit with code 1 if blockers are found (useful in CI)
 -t, --type <instance-type>    Force the target instance type instead of detecting it
     --write                   Write the proposed configuration files (existing files are never overwritten)
@@ -2856,6 +2857,7 @@ path                          Path of the project to migrate (current directory 
 -F, --format <format>         Output format (human, json) (default: human)
     --mode <mode>             Where to write the changes: a new git branch, a copy of the project, or auto (branch if the git repository is clean, folder otherwise) (auto, branch, folder) (default: auto)
 -n, --name <app-name>         Application name (current directory name by default)
+    --offline                 Do not query Clever Cloud for the add-ons that already exist
 -o, --output <folder>         Folder of the copy in folder mode (default: <project>-clever next to the project)
     --skip-code               Do not modify source files, only generate configuration files
 -t, --type <instance-type>    Force the target instance type instead of detecting it

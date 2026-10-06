@@ -126,6 +126,34 @@ describe('projects already migrated', () => {
   });
 });
 
+describe('existing add-ons on Clever Cloud', () => {
+  const files = {
+    '.clever.json': JSON.stringify({ apps: [{ app_id: 'app_1', org_id: 'user_1', alias: 'shop', name: 'shop' }] }),
+    'index.php': '<?php\n$pdo = new PDO("mysql:host=$host;dbname=$db", $user, $pass);\n',
+  };
+
+  it('does not ask to create an add-on already linked', () => {
+    const directory = createProject(files);
+    const report = analyzeProject(directory, {
+      remote: { appAlias: 'shop', addons: [{ name: 'shop-db', provider: 'mysql-addon', isLinked: true }] },
+    });
+    assert.ok(!report.findings.some((finding) => finding.id === 'database.addon'));
+    assert.equal(report.findings.find((finding) => finding.id === 'database.import-data')?.severity, 'info');
+    assert.equal(report.addons[0].name, 'shop-db');
+    assert.ok(!report.commands.some((command) => /clever (create|addon create)/.test(command)));
+    assert.equal(report.counts.blocker, 0);
+  });
+
+  it('asks to link an existing add-on', () => {
+    const directory = createProject(files);
+    const report = analyzeProject(directory, {
+      remote: { appAlias: 'shop', addons: [{ name: 'shop-mysql', provider: 'mysql-addon', isLinked: false }] },
+    });
+    assert.equal(report.findings.find((finding) => finding.id === 'remote.addon-unlinked')?.severity, 'warning');
+    assert.ok(report.commands.includes('clever service link-addon shop-mysql --alias shop'));
+  });
+});
+
 describe('data migration', () => {
   it('offers to import a SQL file of the project when the local database is gone', () => {
     const directory = createProject({

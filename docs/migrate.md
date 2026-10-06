@@ -105,6 +105,10 @@ Migration plan
     $ clever deploy
 ```
 
+## Existing resources
+
+When the project is linked to an application (`.clever.json`) and you are logged in, `clever migrate` and `clever migrate apply` ask Clever Cloud which add-ons already exist: a linked add-on is reported as done (not to be created again), an existing but unlinked one comes with its `clever service link-addon` command. Use `--offline` to skip this check.
+
 ## Runtime selection
 
 1. `--type` if given

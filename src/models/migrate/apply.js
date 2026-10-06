@@ -42,6 +42,7 @@ const COMMIT_MESSAGES = {
  * @property {string|null} [appName]
  * @property {boolean} [dryRun]
  * @property {boolean} [skipCode] do not rewrite source files
+ * @property {import('./remote-state.js').RemoteState|null} [remote] what already exists on Clever Cloud
  */
 
 /**
@@ -101,7 +102,7 @@ export async function applyMigration(projectPath, options) {
   }
 
   // The plan is computed on the source so that the copy does not change the application name
-  const report = analyzeProject(sourcePath, { type: options.type, appName: options.appName });
+  const report = analyzeProject(sourcePath, { type: options.type, appName: options.appName, remote: options.remote });
   const { changes, todo, edits } = planMigrationFiles(new ProjectScanner(sourcePath), report, {
     code: !options.skipCode,
   });

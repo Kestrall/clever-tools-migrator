@@ -9,6 +9,7 @@ import { Logger } from '../../logger.js';
 import { listAvailableTypes } from '../../models/application.js';
 import { applyMigration } from '../../models/migrate/apply.js';
 import { DATA_SCRIPT, ENV_FILE, MIGRATION_GUIDE, SETUP_SCRIPT } from '../../models/migrate/migration-files.js';
+import { fetchRemoteState } from '../../models/migrate/remote-state.js';
 import { humanJsonOutputFormatOption } from '../global.options.js';
 
 export const migrateApplyCommand = defineCommand({
@@ -55,6 +56,11 @@ export const migrateApplyCommand = defineCommand({
       schema: z.boolean().default(false),
       description: 'Do not modify source files, only generate configuration files',
     }),
+    offline: defineOption({
+      name: 'offline',
+      schema: z.boolean().default(false),
+      description: 'Do not query Clever Cloud for the add-ons that already exist',
+    }),
     dryRun: defineOption({
       name: 'dry-run',
       schema: z.boolean().default(false),
@@ -70,7 +76,7 @@ export const migrateApplyCommand = defineCommand({
     }),
   ],
   async handler(options, projectPath) {
-    const { mode, branch, output, type, name, dryRun, skipCode, format } = options;
+    const { mode, branch, output, type, name, dryRun, skipCode, offline, format } = options;
     const root = path.resolve(projectPath || '.');
 
     const stats = await fs.stat(root).catch(() => null);
@@ -81,7 +87,8 @@ export const migrateApplyCommand = defineCommand({
       throw new Error(`Unknown instance type "${type}", available types: ${listAvailableTypes().join(', ')}`);
     }
 
-    const result = await applyMigration(root, { mode, branch, output, type, appName: name, dryRun, skipCode });
+    const { state: remote } = offline ? { state: null } : await fetchRemoteState(root);
+    const result = await applyMigration(root, { mode, branch, output, type, appName: name, dryRun, skipCode, remote });
 
     if (format === 'json') {
       Logger.printJson({

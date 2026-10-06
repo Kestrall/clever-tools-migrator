@@ -18,6 +18,7 @@
  * @property {string} name
  * @property {string} label
  * @property {string} [fromService] docker-compose service it replaces
+ * @property {'linked'|'unlinked'} [existing] already exists on Clever Cloud
  */
 
 /**
@@ -183,12 +184,18 @@ export class MigrationReport {
    */
   get commands() {
     const commands = [];
-    if (this.runtime.type != null) {
-      commands.push(`clever create --type ${this.runtime.type} ${shellQuote(this.appName)}`);
+    const app = this.linkedApp ?? this.appName;
+    if (this.runtime.type != null && this.linkedApp == null) {
+      commands.push(`clever create --type ${this.runtime.type} ${shellQuote(app)}`);
     }
     for (const addon of this.addons) {
+      if (addon.existing === 'linked') {
+        continue;
+      }
       commands.push(
-        `clever addon create ${addon.provider} ${shellQuote(addon.name)} --link ${shellQuote(this.appName)}`,
+        addon.existing === 'unlinked'
+          ? `clever service link-addon ${shellQuote(addon.name)} --alias ${shellQuote(app)}`
+          : `clever addon create ${addon.provider} ${shellQuote(addon.name)} --link ${shellQuote(app)}`,
       );
     }
     for (const file of this.envFilesToImport) {

@@ -8,6 +8,7 @@ import { styleText } from '../../lib/style-text.js';
 import { Logger } from '../../logger.js';
 import { listAvailableTypes } from '../../models/application.js';
 import { analyzeProject } from '../../models/migrate/analyze.js';
+import { fetchRemoteState } from '../../models/migrate/remote-state.js';
 import { renderReport } from '../../models/migrate/render.js';
 import { humanJsonOutputFormatOption } from '../global.options.js';
 
@@ -40,6 +41,11 @@ export const migrateCommand = defineCommand({
       schema: z.boolean().default(false),
       description: 'Exit with code 1 if blockers are found (useful in CI)',
     }),
+    offline: defineOption({
+      name: 'offline',
+      schema: z.boolean().default(false),
+      description: 'Do not query Clever Cloud for the add-ons that already exist',
+    }),
     format: humanJsonOutputFormatOption,
   },
   args: [
@@ -50,7 +56,7 @@ export const migrateCommand = defineCommand({
     }),
   ],
   async handler(options, projectPath) {
-    const { type, name, write, strict, format } = options;
+    const { type, name, write, strict, offline, format } = options;
     const root = path.resolve(projectPath || '.');
 
     const stats = await fs.stat(root).catch(() => null);
@@ -61,7 +67,16 @@ export const migrateCommand = defineCommand({
       throw new Error(`Unknown instance type "${type}", available types: ${listAvailableTypes().join(', ')}`);
     }
 
-    const report = analyzeProject(root, { type, appName: name });
+    const { state: remote, error: remoteError } = offline ? { state: null, error: null } : await fetchRemoteState(root);
+    const report = analyzeProject(root, { type, appName: name, remote });
+    if (remoteError != null) {
+      report.add({
+        id: 'remote.unavailable',
+        severity: 'info',
+        title: `Existing add-ons not checked on Clever Cloud: ${remoteError}`,
+        fix: ['`clever login`, or use --offline'],
+      });
+    }
 
     /** @type {string[]} */
     const written = [];

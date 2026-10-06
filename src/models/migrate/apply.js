@@ -148,6 +148,32 @@ export async function applyMigration(projectPath, options) {
     }
   }
 
+  // composer.lock must follow the platform written in composer.json
+  const composerPackages = report.composerPlatform.flatMap((entry) => entry.packages);
+  if (
+    composerPackages.length > 0 &&
+    result.changes.some((change) => change.path === 'composer.json' && change.status === 'written')
+  ) {
+    const updated = await updateComposerLock(targetPath, composerPackages);
+    if (updated) {
+      result.changes.push({
+        path: 'composer.lock',
+        content: '',
+        action: 'update',
+        description: `Updated ${composerPackages.join(', ')} for the extensions of Clever Cloud`,
+        group: 'code',
+        status: 'written',
+      });
+    } else {
+      result.todo.push({
+        id: 'php.composer-lock',
+        severity: 'blocker',
+        title: `Update composer.lock: composer update ${composerPackages.join(' ')} --no-install (neither composer nor Docker is available)`,
+        location: 'composer.lock',
+      });
+    }
+  }
+
   const targetGit = mode === 'branch' ? git : await getGitState(targetPath);
   if (targetGit.isRepository) {
     if (branchStatus === 'new') {
@@ -257,4 +283,43 @@ async function runGit(directory, args) {
     }
     throw error;
   }
+}
+
+/**
+ * Run `composer update <packages>` with a local Composer, or the official Docker image
+ * @param {string} directory
+ * @param {string[]} packages
+ * @returns {Promise<boolean>}
+ */
+async function updateComposerLock(directory, packages) {
+  const args = ['update', ...packages, '--no-install', '--no-scripts', '--no-plugins', '--no-interaction'];
+  const attempts = [
+    ['composer', args],
+    [
+      'docker',
+      [
+        'run',
+        '--rm',
+        ...(process.getuid != null ? ['-u', `${process.getuid()}:${process.getgid?.() ?? 0}`] : []),
+        '-e',
+        'COMPOSER_HOME=/tmp',
+        '-v',
+        `${directory}:/app`,
+        '-w',
+        '/app',
+        'composer:2',
+        'composer',
+        ...args,
+      ],
+    ],
+  ];
+  for (const [command, commandArgs] of /** @type {Array<[string, string[]]>} */ (attempts)) {
+    try {
+      await execFileAsync(command, commandArgs, { cwd: directory, timeout: 600_000 });
+      return true;
+    } catch {
+      // try the next way
+    }
+  }
+  return false;
 }

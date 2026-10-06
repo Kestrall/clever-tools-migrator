@@ -95,6 +95,8 @@ export class MigrationReport {
     this.devValues = [];
     /** @type {DetectedDatabase[]} */
     this.databases = [];
+    /** @type {Array<{ extension: string, version: string, packages: string[] }>} composer platform to align */
+    this.composerPlatform = [];
     /** @type {string|null} alias of the application already linked in .clever.json */
     this.linkedApp = null;
   }

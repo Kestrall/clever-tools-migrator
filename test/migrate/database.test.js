@@ -168,7 +168,7 @@ describe('state of the application on Clever Cloud', () => {
   };
 
   it('only reports what is not done yet on the application', () => {
-    const directory = createProject(files);
+    const directory = createProject({ ...files, 'public/.htaccess': 'RewriteEngine On\n' });
     const report = analyzeProject(directory, {
       remote: {
         appAlias: 'shop',
@@ -205,6 +205,16 @@ describe('state of the application on Clever Cloud', () => {
     assert.match(script, /^ {4}clever unlink "\$OLD_APP"$/m);
     // The old application is never deleted by the script
     assert.doesNotMatch(script, /^\s*clever delete/m);
+  });
+
+  it('adds Apache rewrite rules and trusts the proxy for Symfony', () => {
+    const { files: generated, plan: result, report } = plan(createProject(files));
+    const htaccess = generated.get('public/.htaccess');
+    assert.equal(htaccess?.group, 'code');
+    assert.match(htaccess?.content ?? '', /^ {4}RewriteRule \^ index\.php \[L\]$/m);
+    assert.match(htaccess?.content ?? '', /RewriteRule \^index\\\.php/);
+    assert.ok(!result.todo.some((finding) => finding.id === 'php.front-controller'));
+    assert.equal(report.env.SYMFONY_TRUSTED_PROXIES?.value, 'REMOTE_ADDR');
   });
 
   it('generates framework secrets and keeps them between runs', () => {

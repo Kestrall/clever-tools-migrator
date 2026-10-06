@@ -48,6 +48,7 @@ const HANDLED_FINDINGS = new Set([
   'env.dotenv',
   'env.dotenv-committed',
   'remote.app-type',
+  'php.extension-version',
   'php.symfony-secret',
   'php.laravel-key',
   'ruby.rails-secret',
@@ -71,6 +72,7 @@ const CODE_FINDINGS = new Set([
   'node.next-port',
   'java.port',
   'database.hardcoded-credentials',
+  'php.front-controller',
 ]);
 
 /**

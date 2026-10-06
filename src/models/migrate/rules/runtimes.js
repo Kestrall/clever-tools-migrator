@@ -1,3 +1,5 @@
+import semver from 'semver';
+
 /**
  * @typedef {import('../project-scanner.js').ProjectScanner} ProjectScanner
  * @typedef {import('../report.js').MigrationReport} MigrationReport
@@ -373,6 +375,7 @@ function packageManagerInstall(scanner) {
  * @param {MigrationReport} report
  */
 function checkPhp(scanner, report) {
+  checkPhpExtensionVersions(scanner, report);
   const composer = scanner.readJson('composer.json') ?? {};
   const require = { ...composer.require, ...composer['require-dev'] };
   const isSymfony = require['symfony/framework-bundle'] != null || scanner.has('symfony.lock');
@@ -397,8 +400,36 @@ function checkPhp(scanner, report) {
     }
   }
 
+  // Apache serves PHP on Clever Cloud: without rewrite rules, only "/" reaches the framework router
+  const usesRouter =
+    isSymfony ||
+    isLaravel ||
+    ['slim/slim', 'laminas/laminas-mvc', 'cakephp/cakephp'].some((name) => require[name] != null);
+  if (
+    usesRouter &&
+    scanner.has('public/index.php') &&
+    !scanner.has('public/.htaccess') &&
+    require['symfony/apache-pack'] == null
+  ) {
+    report.add({
+      id: 'php.front-controller',
+      severity: 'blocker',
+      title: 'No public/.htaccess: Apache answers 404 for every route except "/"',
+      details: 'Locally nginx sent every request to index.php, Clever Cloud PHP applications run on Apache.',
+      location: 'public/.htaccess',
+      fix: ['Add Apache rewrite rules sending every request to public/index.php'],
+    });
+  }
+
   if (isSymfony) {
     report.setEnv('APP_ENV', 'prod', 'Symfony production mode');
+    // Behind the Clever Cloud proxy, Symfony must trust it to know the request is in HTTPS
+    const framework = scanner.read('config/packages/framework.yaml') ?? '';
+    const proxiesVariable =
+      /trusted_proxies:\s*['"]?%env\((?:\w+:)*(\w+)\)%/.exec(framework)?.[1] ?? 'SYMFONY_TRUSTED_PROXIES';
+    if (!/trusted_proxies:\s*['"]?(?!%env)[\w.:/,]+/.test(framework)) {
+      report.setEnv(proxiesVariable, 'REMOTE_ADDR', 'Trust the Clever Cloud proxy (HTTPS URLs and client IPs)');
+    }
     if (require['symfony/asset-mapper'] != null) {
       report.setEnv(
         'CC_POST_BUILD_HOOK',
@@ -664,4 +695,66 @@ export function reportSqlite(report, reason, location) {
       'or store the SQLite file on an FS Bucket (not available for Docker applications)',
     ],
   });
+}
+
+/**
+ * Versions of PHP extensions provided by the Clever Cloud PHP runtime that differ from the latest releases.
+ * Observed on PHP 8.4 (October 2026): https://www.clever.cloud/developers/doc/applications/php/extensions/
+ */
+export const CLEVER_PHP_EXTENSION_VERSIONS = { mongodb: '1.21.2' };
+
+/**
+ * Locked packages may require a newer extension than the one Clever Cloud provides (built locally with pecl)
+ * @param {ProjectScanner} scanner
+ * @param {MigrationReport} report
+ */
+function checkPhpExtensionVersions(scanner, report) {
+  const lock = scanner.readJson('composer.lock');
+  const platform = scanner.readJson('composer.json')?.config?.platform ?? {};
+  if (lock == null) {
+    return;
+  }
+  for (const [extension, version] of Object.entries(CLEVER_PHP_EXTENSION_VERSIONS)) {
+    if (platform[`ext-${extension}`] != null) {
+      continue;
+    }
+    const packages = (lock.packages ?? []).filter((/** @type {any} */ lockedPackage) => {
+      const constraint = lockedPackage.require?.[`ext-${extension}`];
+      return constraint != null && !satisfiesComposerConstraint(version, constraint);
+    });
+    if (packages.length === 0) {
+      continue;
+    }
+    report.composerPlatform.push({ extension, version, packages: packages.map((/** @type {any} */ p) => p.name) });
+    report.add({
+      id: 'php.extension-version',
+      severity: 'blocker',
+      title: `Locked packages need a newer ext-${extension} than the ${version} provided by Clever Cloud`,
+      details: packages
+        .map(
+          (/** @type {any} */ p) => `${p.name} ${p.version} requires ext-${extension} ${p.require[`ext-${extension}`]}`,
+        )
+        .join('\n'),
+      location: 'composer.lock',
+      fix: [
+        `\`composer config platform.ext-${extension} ${version}\``,
+        `\`composer update ${packages.map((/** @type {any} */ p) => p.name).join(' ')} --no-install\``,
+      ],
+    });
+  }
+}
+
+/**
+ * Composer constraints are close enough to npm semver ranges for extension versions
+ * @param {string} version
+ * @param {string} constraint
+ * @returns {boolean}
+ */
+function satisfiesComposerConstraint(version, constraint) {
+  const range = constraint.replaceAll(/\s*\|\|?\s*/g, ' || ').replaceAll(',', ' ');
+  try {
+    return semver.satisfies(version, range);
+  } catch {
+    return true;
+  }
 }

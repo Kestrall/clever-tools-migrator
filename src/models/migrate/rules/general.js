@@ -222,14 +222,27 @@ export function checkSourceCode(scanner, report, runtimeType) {
     /\b(postgres(?:ql)?|mysql|mariadb|mongodb|redis|rediss|amqp|nats)(?:\+[\w-]+)?:\/\/[^\s'"`]*?(localhost|127\.0\.0\.1|0\.0\.0\.0)\b/,
     files,
   );
+  const plannedVariables = getPlannedVariables(scanner, report);
   for (const result of localServiceUrls.slice(0, 5)) {
+    const fallbackFor = findFallbackVariable(scanner, result.file, result.text);
+    if (fallbackFor != null && plannedVariables.has(fallbackFor)) {
+      // Only used when the variable is missing, and the migration plan defines it
+      continue;
+    }
     report.add({
       id: 'code.localhost-service',
-      severity: 'warning',
-      title: `Hard-coded ${result.match[1]} connection to ${result.match[2]}`,
+      severity: fallbackFor != null ? 'info' : 'warning',
+      title:
+        fallbackFor != null
+          ? `Default ${result.match[1]} connection to ${result.match[2]}, used when ${fallbackFor} is not defined`
+          : `Hard-coded ${result.match[1]} connection to ${result.match[2]}`,
       details: result.text,
       location: `${result.file}:${result.line}`,
-      fix: ['Read the connection string from the add-on environment variables'],
+      fix: [
+        fallbackFor != null
+          ? `Define ${fallbackFor} on the application (\`clever env set ${fallbackFor} ...\`)`
+          : 'Read the connection string from the add-on environment variables',
+      ],
     });
   }
 
@@ -268,8 +281,28 @@ export function checkSourceCode(scanner, report, runtimeType) {
     }
   }
 
+  if (runtimeType === 'node') {
+    const portVariables = scanner.grep(/^\s*(?:export\s+)?(?:const|let|var)\s+(port|PORT)\s*=\s*(\d{2,5})\s*;?\s*$/);
+    for (const result of portVariables.slice(0, 3)) {
+      const content = scanner.read(result.file) ?? '';
+      const startsServer = new RegExp(`\\.listen\\(\\s*(\\{[^}]*\\b)?${result.match[1]}\\b`).test(content);
+      if (startsServer && result.match[2] !== String(expectedPort)) {
+        report.add({
+          id: 'code.hardcoded-port',
+          severity: 'blocker',
+          title: `The server listens on hard-coded port ${result.match[2]} instead of ${expectedPort}`,
+          details: result.text,
+          location: `${result.file}:${result.line}`,
+          fix: [`Listen on the PORT environment variable (${expectedPort} on Clever Cloud)`],
+        });
+      }
+    }
+  }
+
+  // Only servers being started: a "localhost" database host is handled by the database checks
   const loopbackBindings = scanner.grep(
-    /(\.listen\([^)]*['"](?:localhost|127\.0\.0\.1)['"]|host\s*=\s*['"](?:localhost|127\.0\.0\.1)['"]|"(?:localhost|127\.0\.0\.1):\d+"\)?\s*$|ListenAndServe\(\s*"(?:localhost|127\.0\.0\.1):)/,
+    /(\.listen\([^)]*['"](?:localhost|127\.0\.0\.1)['"]|\b(?:run|serve)\([^)]*\bhost\s*=\s*['"](?:localhost|127\.0\.0\.1)['"]|\bListenAndServe(?:TLS)?\(\s*"(?:localhost|127\.0\.0\.1):|\.bind\(\s*"(?:localhost|127\.0\.0\.1):)/,
+    scanner.sourceFiles.filter((file) => !file.endsWith('.php')),
   );
   for (const result of loopbackBindings.slice(0, 3)) {
     if (
@@ -337,4 +370,49 @@ export function checkSourceCode(scanner, report, runtimeType) {
       location: crontab,
     });
   }
+}
+
+/**
+ * Variables the migration plan will define on the application
+ * @param {ProjectScanner} scanner
+ * @param {MigrationReport} report
+ * @returns {Set<string>}
+ */
+function getPlannedVariables(scanner, report) {
+  const names = new Set([...Object.keys(report.env), ...report.rewired.map((variable) => variable.name)]);
+  for (const file of report.envFilesToImport) {
+    for (const name of Object.keys(scanner.readEnvFile(file) ?? {})) {
+      names.add(name);
+    }
+  }
+  return names;
+}
+
+/**
+ * When a line only provides a default value for an environment variable, return that variable
+ * @param {ProjectScanner} scanner
+ * @param {string} file
+ * @param {string} text
+ * @returns {string|null}
+ */
+export function findFallbackVariable(scanner, file, text) {
+  const explicit =
+    // os.getenv("X", "..."), os.environ.get("X", "..."), env("X", default="..."), ENV.fetch("X", "...")
+    /\b(?:getenv|environ\.get|env|fetch|config|Getenv|getEnv)\(\s*['"]([A-Z][A-Z0-9_]*)['"]\s*,/.exec(text) ??
+    // process.env.X || "...", process.env.X ?? "...", process.env["X"] || "..."
+    /process\.env(?:\.([A-Z][A-Z0-9_]*)|\[['"]([A-Z][A-Z0-9_]*)['"]\])\s*(?:\|\||\?\?)/.exec(text) ??
+    // Spring: ${DATABASE_URL:jdbc:postgresql://localhost...}
+    /\$\{([A-Z][A-Z0-9_]*):/.exec(text);
+  if (explicit != null) {
+    return explicit[1] ?? explicit[2];
+  }
+  // Pydantic settings: a field default is overridden by the variable of the same name (uppercased)
+  const content = scanner.read(file) ?? '';
+  if (/\bBaseSettings\b/.test(content)) {
+    const field = /^\s*([a-z_][a-z0-9_]*)\s*:\s*[^=]+=\s*['"]/i.exec(text);
+    if (field != null) {
+      return field[1].toUpperCase();
+    }
+  }
+  return null;
 }

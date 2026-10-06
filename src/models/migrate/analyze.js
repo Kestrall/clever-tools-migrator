@@ -2,6 +2,7 @@ import path from 'node:path';
 import { slugify } from '../../lib/slugify.js';
 import { ProjectScanner } from './project-scanner.js';
 import { MigrationReport } from './report.js';
+import { checkDatabases } from './rules/database.js';
 import { checkCompose, checkDockerfile, findComposeFile, findDockerfile } from './rules/docker.js';
 import { checkForeignPlatforms, checkRepository, checkSourceCode } from './rules/general.js';
 import { checkRuntime, detectRuntimes } from './rules/runtimes.js';
@@ -91,6 +92,8 @@ export function analyzeProject(projectPath, options = {}) {
   if (composePath != null) {
     checkCompose(scanner, report, composePath, { isDockerRuntime: runtimeType === 'docker' });
   }
+
+  checkDatabases(scanner, report);
 
   checkForeignPlatforms(scanner, report, runtimeType);
   checkSourceCode(scanner, report, runtimeType);

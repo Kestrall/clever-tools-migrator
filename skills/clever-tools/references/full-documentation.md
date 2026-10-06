@@ -2857,6 +2857,7 @@ path                          Path of the project to migrate (current directory 
     --mode <mode>             Where to write the changes: a new git branch, a copy of the project, or auto (branch if the git repository is clean, folder otherwise) (auto, branch, folder) (default: auto)
 -n, --name <app-name>         Application name (current directory name by default)
 -o, --output <folder>         Folder of the copy in folder mode (default: <project>-clever next to the project)
+    --skip-code               Do not modify source files, only generate configuration files
 -t, --type <instance-type>    Force the target instance type instead of detecting it
 ```
 

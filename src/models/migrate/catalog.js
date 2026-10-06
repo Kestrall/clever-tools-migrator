@@ -62,6 +62,7 @@ export const SERVICE_MAPPINGS = [
         uri: 'MONGODB_ADDON_URI',
         host: 'MONGODB_ADDON_HOST',
         port: 'MONGODB_ADDON_PORT',
+        database: 'MONGODB_ADDON_DB',
         user: 'MONGODB_ADDON_USER',
         password: 'MONGODB_ADDON_PASSWORD',
       },
@@ -178,6 +179,19 @@ export const SERVICE_MAPPINGS = [
     },
   },
 ];
+
+/**
+ * @param {string} provider
+ * @returns {AddonMapping|null}
+ */
+export function getAddonMapping(provider) {
+  for (const { mapping } of SERVICE_MAPPINGS) {
+    if (mapping.kind === 'addon' && mapping.provider === provider) {
+      return mapping;
+    }
+  }
+  return null;
+}
 
 /**
  * @param {string} image

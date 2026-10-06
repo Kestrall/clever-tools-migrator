@@ -25,6 +25,7 @@ const NOT_COPIED = new Set([
 
 const COMMIT_MESSAGES = {
   config: 'chore(clever): add Clever Cloud configuration files',
+  code: 'fix(clever): listen on the port and interface provided by Clever Cloud',
   setup: 'docs(clever): add Clever Cloud setup script and migration guide',
 };
 
@@ -40,6 +41,7 @@ const COMMIT_MESSAGES = {
  * @property {string|null} [type]
  * @property {string|null} [appName]
  * @property {boolean} [dryRun]
+ * @property {boolean} [skipCode] do not rewrite source files
  */
 
 /**
@@ -50,6 +52,7 @@ const COMMIT_MESSAGES = {
  * @property {string[]} commits
  * @property {Array<import('./migration-files.js').PlannedChange & { status: 'written'|'skipped', reason?: string }>} changes
  * @property {import('./report.js').Finding[]} todo
+ * @property {import('./code-fixes.js').CodeEdit[]} edits
  * @property {import('./report.js').MigrationReport} report
  * @property {string|null} modeReason why auto mode picked this mode
  */
@@ -91,7 +94,9 @@ export async function applyMigration(projectPath, options) {
 
   // The plan is computed on the source so that the copy does not change the application name
   const report = analyzeProject(sourcePath, { type: options.type, appName: options.appName });
-  const { changes, todo } = planMigrationFiles(new ProjectScanner(sourcePath), report);
+  const { changes, todo, edits } = planMigrationFiles(new ProjectScanner(sourcePath), report, {
+    code: !options.skipCode,
+  });
 
   /** @type {ApplyResult} */
   const result = {
@@ -101,6 +106,7 @@ export async function applyMigration(projectPath, options) {
     commits: [],
     changes: changes.map((change) => ({ ...change, status: 'written' })),
     todo,
+    edits,
     report,
     modeReason,
   };
@@ -118,8 +124,9 @@ export async function applyMigration(projectPath, options) {
   for (const change of result.changes) {
     const target = path.join(targetPath, change.path);
     const existing = await fs.readFile(target, 'utf8').catch(() => null);
-    // Never overwrite a file the user wrote, except the ones we only append to
-    if (existing != null && change.path !== '.gitignore' && !existing.includes(GENERATED_MARKER)) {
+    // Never overwrite a file the user wrote, except .gitignore (appended to) and code fixes (computed from it)
+    const isDerivedFromExisting = change.path === '.gitignore' || change.group === 'code';
+    if (existing != null && !isDerivedFromExisting && !existing.includes(GENERATED_MARKER)) {
       change.status = 'skipped';
       change.reason = 'file already exists';
       continue;
@@ -135,7 +142,7 @@ export async function applyMigration(projectPath, options) {
   if (targetGit.isRepository) {
     await runGit(targetPath, ['checkout', '-b', options.branch]);
     result.branch = options.branch;
-    for (const group of /** @type {const} */ (['config', 'setup'])) {
+    for (const group of /** @type {const} */ (['config', 'code', 'setup'])) {
       const paths = result.changes
         .filter((change) => change.group === group && change.status === 'written')
         .map((change) => change.path);

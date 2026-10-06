@@ -214,7 +214,7 @@ export class ProjectScanner {
   }
 
   /**
-   * Search a regular expression line by line
+   * Search a regular expression line by line, ignoring comments and docstrings
    * @param {RegExp} pattern
    * @param {string[]} files
    * @returns {Array<{ file: string, line: number, text: string, match: RegExpExecArray }>}
@@ -227,7 +227,11 @@ export class ProjectScanner {
         continue;
       }
       const lines = content.split('\n');
+      const isCode = codeLineMask(file, lines);
       for (let index = 0; index < lines.length; index++) {
+        if (!isCode[index]) {
+          continue;
+        }
         const match = pattern.exec(lines[index]);
         if (match != null) {
           results.push({ file, line: index + 1, text: lines[index].trim(), match });
@@ -254,4 +258,60 @@ export class ProjectScanner {
       current = parent;
     }
   }
+}
+
+const HASH_COMMENT_EXTENSIONS = new Set([
+  '.py',
+  '.rb',
+  '.ex',
+  '.exs',
+  '.yml',
+  '.yaml',
+  '.toml',
+  '.ini',
+  '.conf',
+  '.properties',
+]);
+const C_COMMENT_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.ts', '.mts', '.go', '.rs', '.java', '.kt', '.php']);
+
+/**
+ * Tell which lines hold code, as opposed to comments and Python docstrings.
+ * Line based heuristic: good enough to avoid reporting documentation examples.
+ * @param {string} file
+ * @param {string[]} lines
+ * @returns {boolean[]}
+ */
+export function codeLineMask(file, lines) {
+  const extension = path.extname(file);
+  const hashComments = HASH_COMMENT_EXTENSIONS.has(extension) || extension === '.php';
+  const cComments = C_COMMENT_EXTENSIONS.has(extension);
+  /** @type {string|null} */
+  let openBlock = null;
+
+  return lines.map((line) => {
+    const trimmed = line.trim();
+    if (openBlock != null) {
+      if (trimmed.includes(openBlock)) {
+        openBlock = null;
+      }
+      return false;
+    }
+    if ((hashComments && trimmed.startsWith('#')) || (cComments && /^(\/\/|\*|\/\*)/.test(trimmed))) {
+      if (cComments && trimmed.startsWith('/*') && !trimmed.includes('*/')) {
+        openBlock = '*/';
+      }
+      return false;
+    }
+    if (extension === '.py') {
+      const docstring = /^(?:[rbuf]{0,2})("""|''')/i.exec(trimmed);
+      if (docstring != null) {
+        // A docstring closed on the same line is still documentation
+        if (trimmed.split(docstring[1]).length === 2) {
+          openBlock = docstring[1];
+        }
+        return false;
+      }
+    }
+    return true;
+  });
 }

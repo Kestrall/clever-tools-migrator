@@ -1,6 +1,7 @@
 import { parse as parseYaml } from 'yaml';
-import { findServiceMapping, guessVariableRole } from '../catalog.js';
+import { findServiceMapping } from '../catalog.js';
 import { analyzeDockerfile } from '../dockerfile.js';
+import { resolveRewiring } from '../rewiring.js';
 
 const HTTP_PORT = 8080;
 const COMPOSE_FILES = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml'];
@@ -606,23 +607,36 @@ function describeRewiring(report, name, value, source, serviceNames, replacedByA
     return null;
   }
   const mapping = replacedByAddon.get(referencedService);
-  const role = guessVariableRole(name);
-  const addonVariable = mapping != null && role != null ? (mapping.variables[role] ?? null) : null;
-  // SQLAlchemy-like URLs embed the driver in the scheme, add-on URIs do not
-  const driverScheme = role === 'uri' ? (/^([a-z]+\+[\w-]+):\/\//.exec(value)?.[1] ?? null) : null;
+  const target = mapping != null ? resolveRewiring(mapping, name, value) : null;
   const addonName =
     mapping != null ? (report.addons.find((addon) => addon.provider === mapping.provider)?.name ?? null) : null;
-  report.rewired.push({ name, value, source, service: referencedService, addonName, addonVariable, driverScheme });
+  report.rewired.push({
+    name,
+    value,
+    source,
+    service: referencedService,
+    addonName,
+    addonVariable: target?.addonVariable ?? null,
+    driverScheme: target?.driverScheme ?? null,
+    query: target?.query ?? null,
+    uriParts: target?.uriParts ?? null,
+    scheme: target?.scheme ?? null,
+  });
 
-  if (addonVariable === name) {
+  if (target?.addonVariable === name) {
     return `${name}=${value} → already injected by the add-on, remove it`;
   }
-  if (addonVariable == null) {
+  if (target?.uriParts != null) {
+    return `${name}=${value} → built from ${Object.values(target.uriParts).join(', ')}`;
+  }
+  if (target?.addonVariable == null) {
     return `${name}=${value} → points to "${referencedService}", use the matching Clever Cloud variable`;
   }
   const schemeHint =
-    driverScheme != null ? `, which uses ${value.split('+')[0]}://: convert it to ${driverScheme}:// in code` : '';
-  return `${name}=${value} → use ${addonVariable}${schemeHint}`;
+    target.driverScheme != null
+      ? `, which uses ${target.driverScheme.split('+')[0]}://: convert it to ${target.driverScheme}:// in code`
+      : '';
+  return `${name}=${value} → use ${target.addonVariable}${schemeHint}`;
 }
 
 /**

@@ -31,7 +31,21 @@ clever migrate apply --dry-run                # show what would be written
 | `.gitignore` | `.env` and `.env.clever` added when needed |
 | `.env.clever` | Production variables built from `.env` / `env_file`: compose hostnames removed, `development` switched to `production`, missing variables from `.env.example` listed as `TODO`. **Never committed** |
 | `clever-setup.sh` | Creates the application and add-ons, imports `.env.clever`, sets the `CC_*` variables and rebuilds variables such as `DATABASE_URL` from the add-on (`postgresql+psycopg://` scheme kept) |
+| `clever-migrate-data.sh` | Copies the local databases into the add-ons (see [Databases](#databases)) |
+| Source files | Safe code fixes, see below. Disable them with `--skip-code` |
 | `CLEVER-MIGRATION.md` | Steps, generated files, remaining manual changes and what was handled |
+
+Code fixes keep the original value as fallback, so local development is unchanged:
+
+| Stack | Before | After |
+|---|---|---|
+| Node.js | `app.listen(3000)`, `const port = 3000` | `process.env.PORT \|\| 3000` |
+| Node.js | `listen(port, 'localhost')` | `listen(port, '0.0.0.0')` |
+| Next.js | `"start": "next start -p 3000"` | `"start": "next start"` |
+| Spring Boot | `server.port=8081` | `server.port=${PORT:8080}` |
+| PHP | `$host = 'localhost';` + PDO DSN | `getenv('MYSQL_ADDON_HOST') ?: 'localhost'` + `port=$port` |
+
+When several Node.js servers have hard-coded ports, none is changed: only one of them can receive the HTTP traffic, this is left as a manual step.
 
 Safety rules:
 
@@ -41,6 +55,24 @@ Safety rules:
 - nothing is pushed and nothing is created on Clever Cloud: review the branch, then run `./clever-setup.sh`
 
 `clever env import` replaces all the variables of the application, so the script imports `.env.clever` before setting the other variables.
+
+## Databases
+
+Whatever the stack, `clever migrate` looks for the databases the application uses and moves them to managed add-ons:
+
+| Detected from | Examples |
+|---|---|
+| Dependencies | `pg`, `mysql2`, `mongoose`, `ioredis` (npm) · `ext-pdo_mysql`, `predis/predis` (Composer) · `psycopg`, `pymysql`, `pymongo` (pip) · `pg`, `mysql2` (Gemfile) · `pgx`, `go-sql-driver/mysql` (Go) · JDBC drivers (Maven/Gradle) |
+| Code | PDO DSN (`mysql:host=`, `pgsql:host=`), `mysqli_connect`, `pg_connect`, `jdbc:postgresql:`, Django `ENGINE`, Prisma `provider` |
+| Configuration | `DATABASE_URL=postgres://…`, Laravel `DB_CONNECTION`, `DB_HOST`… |
+| docker-compose | `postgres`, `mysql`, `mariadb`, `mongo`, `redis` services |
+
+Then:
+
+1. **Add-on**: `clever-setup.sh` creates the PostgreSQL, MySQL, MongoDB or Redis add-on and links it. A database already hosted elsewhere (e.g. `*.neon.tech`) is kept.
+2. **Configuration**: variables pointing to a local database are rebuilt from the add-on: `DATABASE_URL` from `POSTGRESQL_ADDON_URI` (driver scheme like `postgresql+psycopg://` and options like `?serverVersion=` kept, local-only ones like `sslmode` dropped), MySQL URIs built from `MYSQL_ADDON_HOST/PORT/DB/USER/PASSWORD`, Laravel `DB_*` mapped one by one.
+3. **Code**: hard-coded PHP credentials (`$host = 'localhost'`, `define('DB_HOST', …)`) read the add-on variables with the current values as fallback, and the add-on port is added to the PDO DSN.
+4. **Data**: `clever-migrate-data.sh` dumps the local database (or the docker-compose service) and imports it into the add-on after confirmation. Clients (`mysqldump`, `pg_dump`, `mongodump`…) are used when installed, through Docker otherwise. Passwords are asked, never written in the script.
 
 ## Report
 

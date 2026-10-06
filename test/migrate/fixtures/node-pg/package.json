@@ -1,0 +1,14 @@
+{
+  "name": "node-pg",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": "24"
+  },
+  "dependencies": {
+    "pg": "^8.13.0",
+    "express": "^4.21.0"
+  }
+}

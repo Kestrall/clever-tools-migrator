@@ -39,6 +39,18 @@
  * @property {string|null} addonName planned add-on replacing the service
  * @property {string|null} addonVariable add-on variable holding the new value
  * @property {string|null} driverScheme scheme to restore (e.g. postgresql+psycopg) when the add-on URI has none
+ * @property {string|null} [query] query string of the original URI, kept on the new value
+ * @property {Record<string, string>|null} [uriParts] role → add-on variable when the URI is built from its parts
+ * @property {string|null} [scheme] scheme of the URI built from its parts
+ */
+
+/**
+ * A database used by the application
+ * @typedef {object} DetectedDatabase
+ * @property {string} provider add-on provider
+ * @property {string} label
+ * @property {string[]} evidence why we think it is used
+ * @property {string|null} addonName
  */
 
 /**
@@ -80,6 +92,8 @@ export class MigrationReport {
     this.rewired = [];
     /** @type {DevValue[]} */
     this.devValues = [];
+    /** @type {DetectedDatabase[]} */
+    this.databases = [];
   }
 
   /**
@@ -216,6 +230,7 @@ export class MigrationReport {
         envFilesToImport: this.envFilesToImport,
         rewired: this.rewired,
         devValues: this.devValues,
+        databases: this.databases,
         files: this.files,
         extraApps: this.extraApps,
         commands: this.commands,

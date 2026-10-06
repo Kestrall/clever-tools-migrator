@@ -50,6 +50,11 @@ export const migrateApplyCommand = defineCommand({
       aliases: ['n'],
       placeholder: 'app-name',
     }),
+    skipCode: defineOption({
+      name: 'skip-code',
+      schema: z.boolean().default(false),
+      description: 'Do not modify source files, only generate configuration files',
+    }),
     dryRun: defineOption({
       name: 'dry-run',
       schema: z.boolean().default(false),
@@ -65,7 +70,7 @@ export const migrateApplyCommand = defineCommand({
     }),
   ],
   async handler(options, projectPath) {
-    const { mode, branch, output, type, name, dryRun, format } = options;
+    const { mode, branch, output, type, name, dryRun, skipCode, format } = options;
     const root = path.resolve(projectPath || '.');
 
     const stats = await fs.stat(root).catch(() => null);
@@ -76,7 +81,7 @@ export const migrateApplyCommand = defineCommand({
       throw new Error(`Unknown instance type "${type}", available types: ${listAvailableTypes().join(', ')}`);
     }
 
-    const result = await applyMigration(root, { mode, branch, output, type, appName: name, dryRun });
+    const result = await applyMigration(root, { mode, branch, output, type, appName: name, dryRun, skipCode });
 
     if (format === 'json') {
       Logger.printJson({
@@ -94,6 +99,7 @@ export const migrateApplyCommand = defineCommand({
           status,
           reason,
         })),
+        codeEdits: result.edits,
         todo: result.todo,
       });
       return;
@@ -142,6 +148,18 @@ function printResult(result, dryRun) {
           ? styleText('yellow', ' (not committed, contains secrets)')
           : '';
     Logger.println(`  ${icon} ${change.path} ${styleText('grey', `# ${change.description}`)}${suffix}`);
+  }
+
+  if (result.edits.length > 0) {
+    Logger.println('');
+    Logger.println(styleText('bold', 'Code changes'));
+    for (const edit of result.edits) {
+      Logger.println(`  ${styleText('blue', `${edit.file}:${edit.line}`)} ${styleText('grey', `# ${edit.reason}`)}`);
+      if (edit.before !== '') {
+        Logger.println(`    ${styleText('red', `- ${edit.before}`)}`);
+      }
+      Logger.println(`    ${styleText('green', `+ ${edit.after}`)}`);
+    }
   }
 
   if (result.commits.length > 0) {

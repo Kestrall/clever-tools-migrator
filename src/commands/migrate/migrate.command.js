@@ -84,7 +84,7 @@ export const migrateCommand = defineCommand({
       }
       case 'human':
       default: {
-        Logger.println(renderReport(report));
+        Logger.println(renderReport(report, { pathArgument: projectPath ?? '' }));
         for (const file of written) {
           Logger.printSuccess(`${styleText('green', file)} written`);
         }

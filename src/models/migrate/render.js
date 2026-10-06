@@ -1,4 +1,5 @@
 import { styleText } from '../../lib/style-text.js';
+import { shellQuote } from './report.js';
 
 /**
  * @typedef {import('./report.js').MigrationReport} MigrationReport
@@ -19,9 +20,10 @@ const SECTIONS = /** @type {const} */ ([
 /**
  * Human readable report
  * @param {MigrationReport} report
+ * @param {{ pathArgument?: string }} [options] project path as typed by the user, repeated in the reminder
  * @returns {string}
  */
-export function renderReport(report) {
+export function renderReport(report, { pathArgument = '' } = {}) {
   const lines = [];
   const { blocker, warning, info } = report.counts;
 
@@ -49,7 +51,30 @@ export function renderReport(report) {
   }
 
   lines.push(...renderPlan(report));
+  lines.push(...renderReminder(pathArgument));
   return lines.join('\n');
+}
+
+/**
+ * @param {string} pathArgument
+ * @returns {string[]}
+ */
+function renderReminder(pathArgument) {
+  const target = pathArgument !== '' ? ` ${shellQuote(pathArgument)}` : '';
+  const commands = [
+    [`clever migrate${target}`, 'analyze again after your changes'],
+    [`clever migrate apply${target} --dry-run`, 'preview the changes, nothing is written'],
+    [`clever migrate apply${target}`, 'write the changes on a new branch or in a copy'],
+  ];
+  const width = Math.max(...commands.map(([command]) => command.length));
+  return [
+    styleText('bold', 'Reminder'),
+    ...commands.map(
+      ([command, description]) =>
+        `  ${styleText('yellow', command.padEnd(width))}  ${styleText('grey', `# ${description}`)}`,
+    ),
+    '',
+  ];
 }
 
 /**

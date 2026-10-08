@@ -194,16 +194,27 @@ if __name__ == "__main__":
       return {
         'index.php': `<?php
 
-if (($_SERVER['REQUEST_URI'] ?? '/') === '/health') {
+// Every request without a matching file reaches this front controller (.htaccess on Apache)
+$path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+
+if ($path === '/health') {
     header('Content-Type: text/plain');
     echo 'ok';
     return;
 }
 ?>
 ${welcomePage(name, 'PHP').replace('.</p>', ' with PHP <?= htmlspecialchars(PHP_VERSION) ?>.</p>')}`,
+        '.htaccess': [
+          'RewriteEngine On',
+          'RewriteCond %{REQUEST_FILENAME} !-f',
+          'RewriteCond %{REQUEST_FILENAME} !-d',
+          'RewriteRule ^ index.php [QSA,L]',
+          '',
+        ].join('\n'),
         '.gitignore': ['vendor/', '.env', ''].join('\n'),
         'README.md': readme(name, this.runLocally, [
           'Apache serves the root of the repository. Move the public files to a folder and `clever env set CC_WEBROOT /public` if needed.',
+          'Requests that match no file are routed to index.php by .htaccess.',
           'Add a composer.json to install dependencies at each deployment.',
         ]),
       };

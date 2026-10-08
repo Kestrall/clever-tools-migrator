@@ -11,6 +11,7 @@ import * as Application from '../../models/application.js';
 import { AVAILABLE_ZONES, listAvailableZones } from '../../models/application.js';
 import { checkCanScaffold, getStarterTemplate, scaffoldProject } from '../../models/init/scaffold.js';
 import { listStarterRuntimes } from '../../models/init/templates.js';
+import { deployCommand } from '../deploy/deploy.command.js';
 import { aliasCreationOption, humanJsonOutputFormatOption, orgaIdOrNameOption } from '../global.options.js';
 
 export const initCommand = defineCommand({
@@ -30,6 +31,12 @@ export const initCommand = defineCommand({
       schema: z.boolean().default(false),
       description: 'Only generate the project files, do not create the application on Clever Cloud',
     }),
+    deploy: defineOption({
+      name: 'deploy',
+      schema: z.boolean().default(false),
+      description: 'Deploy the application right after its creation',
+      aliases: ['d'],
+    }),
     org: orgaIdOrNameOption,
     alias: aliasCreationOption,
     format: humanJsonOutputFormatOption,
@@ -48,12 +55,18 @@ export const initCommand = defineCommand({
     }),
   ],
   async handler(options, runtime, rawName) {
-    const { region, local, org: orgaIdOrName, alias, format } = options;
+    const { region, local, deploy, org: orgaIdOrName, alias, format } = options;
     const directory = process.cwd();
     const name = rawName != null && rawName !== '' ? rawName : path.basename(directory);
     const template = getStarterTemplate(runtime);
 
     // Fail before writing anything
+    if (deploy && local) {
+      throw new Error('--deploy needs the application on Clever Cloud, it cannot be used with --local');
+    }
+    if (deploy && format === 'json') {
+      throw new Error('--deploy streams the deployment logs, it cannot be used with --format json');
+    }
     await checkCanScaffold(directory, runtime, name);
     if (!local) {
       const { apps } = await AppConfig.loadApplicationConf();
@@ -63,6 +76,7 @@ export const initCommand = defineCommand({
     const scaffold = await scaffoldProject(directory, runtime, name);
 
     let app = null;
+    let linkedAlias = null;
     if (!local) {
       try {
         app = await Application.create(name, runtime, region, orgaIdOrName, null, false, template.env);
@@ -71,7 +85,7 @@ export const initCommand = defineCommand({
           `The project files are ready but the application could not be created: ${error.message}\nCreate it later with \`clever create --type ${runtime} ${name}\`${envHint(template.env)}`,
         );
       }
-      await AppConfig.addLinkedApplication(app, alias);
+      ({ alias: linkedAlias } = await AppConfig.addLinkedApplication(app, alias));
     }
 
     if (format === 'json') {
@@ -86,7 +100,24 @@ export const initCommand = defineCommand({
       return;
     }
 
-    printResult({ runtime, name, template, scaffold, app, local });
+    printResult({ runtime, name, template, scaffold, app, local, deploy });
+
+    if (deploy) {
+      if (scaffold.commit == null) {
+        throw new Error('Nothing to deploy: the files could not be committed, commit them then run `clever deploy`');
+      }
+      Logger.println();
+      await deployCommand.handler({
+        alias: linkedAlias,
+        branch: '',
+        tag: '',
+        force: false,
+        sameCommitPolicy: 'error',
+        quiet: false,
+        follow: false,
+        exitOnDeploy: 'deploy-end',
+      });
+    }
   },
 });
 
@@ -110,8 +141,9 @@ function envHint(env) {
  * @param {import('../../models/init/scaffold.js').ScaffoldResult} result.scaffold
  * @param {any} result.app
  * @param {boolean} result.local
+ * @param {boolean} result.deploy
  */
-function printResult({ runtime, name, template, scaffold, app, local }) {
+function printResult({ runtime, name, template, scaffold, app, local, deploy }) {
   const check = styleText('green', '✓');
   Logger.println(`${check} ${styleText('bold', runtime)} project generated: ${template.description}`);
   for (const file of scaffold.files) {
@@ -143,7 +175,11 @@ function printResult({ runtime, name, template, scaffold, app, local }) {
       Logger.println(`  ${styleText('blue', '→')} ${styleText('yellow', `clever env set ${key} ${value}`)}`);
     }
   }
-  Logger.println(`  ${styleText('blue', '→')} ${styleText('yellow', 'clever deploy')} to deploy it`);
+  if (deploy) {
+    Logger.println(`  ${styleText('blue', '→')} ${styleText('yellow', 'clever open')} once deployed`);
+  } else {
+    Logger.println(`  ${styleText('blue', '→')} ${styleText('yellow', 'clever deploy')} to deploy it`);
+  }
   Logger.println(`  ${styleText('blue', '→')} ${styleText('yellow', template.runLocally)} to run it locally`);
   if (app != null) {
     Logger.println(

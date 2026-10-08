@@ -1758,6 +1758,7 @@ app-name                                Application name (current directory name
 **Options**
 ```
 -a, --alias <alias>                     Short name for the application
+-d, --deploy                            Deploy the application right after its creation
 -F, --format <format>                   Output format (human, json) (default: human)
     --local                             Only generate the project files, do not create the application on Clever Cloud
 -o, --org, --owner <org-id|org-name>    Organisation to target by its ID (or name, if unambiguous)

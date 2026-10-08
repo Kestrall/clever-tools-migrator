@@ -36,6 +36,7 @@ These options are available for all commands:
 |[`clever env`](./env/env.docs.md)|Manage environment variables of an application|
 |[`clever features`](./features/features.docs.md)|Manage Clever Tools experimental features|
 |[`clever help`](./help/help.docs.md)|Display help about the Clever Cloud CLI|
+|[`clever init`](./init/init.docs.md)|Generate a minimal working project for a runtime in the current directory and create its application|
 |[`clever instances`](./instances/instances.docs.md)|List instances of an application|
 |[`clever k8s`](./k8s/k8s.docs.md)|Manage Kubernetes clusters|
 |[`clever keycloak`](./keycloak/keycloak.docs.md)|Manage Clever Cloud Keycloak services|

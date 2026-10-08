@@ -1738,6 +1738,32 @@ clever features list [options]
 clever help
 ```
 
+## init
+
+**Description:** Generate a minimal working project for a runtime in the current directory and create its application
+
+**Since:** Unreleased
+
+**Usage**
+```
+clever init <runtime> [<app-name>] [options]
+```
+
+**Arguments**
+```
+runtime                                 Runtime of the project: docker, node, python, php
+app-name                                Application name (current directory name is used if not specified) (optional)
+```
+
+**Options**
+```
+-a, --alias <alias>                     Short name for the application
+-F, --format <format>                   Output format (human, json) (default: human)
+    --local                             Only generate the project files, do not create the application on Clever Cloud
+-o, --org, --owner <org-id|org-name>    Organisation to target by its ID (or name, if unambiguous)
+-r, --region <zone>                     Region, can be 'par', 'parhds', 'grahds', 'rbx', 'rbxhds', 'scw', 'ldn', 'mtl', 'sgp', 'syd', 'wsw' (default: par)
+```
+
 ## instances
 
 **Description:** List instances of an application

@@ -110,11 +110,12 @@ export async function checkProjectDirectory(parent, name) {
  * @param {string} directory
  * @param {string} runtime
  * @param {string} name
+ * @param {import('./templates.js').StarterAddon[]} [addons] add-ons described in the welcome page and the README
  * @returns {Promise<ScaffoldResult>}
  */
-export async function scaffoldProject(directory, runtime, name) {
+export async function scaffoldProject(directory, runtime, name, addons = []) {
   await checkCanScaffold(directory, runtime, name);
-  const files = getStarterTemplate(runtime).files(name);
+  const files = getStarterTemplate(runtime).files(name, addons);
   await fs.mkdir(directory, { recursive: true });
 
   for (const [file, content] of Object.entries(files)) {

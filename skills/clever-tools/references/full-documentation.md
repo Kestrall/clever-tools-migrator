@@ -1757,12 +1757,14 @@ app-name                                Application name, the project is generat
 
 **Options**
 ```
+    --addon <database[:plan]>           Database add-on to create and link, with an optional plan (cheapest by default). Can be repeated. Databases: postgresql, mysql, mongodb, redis, elasticsearch
 -a, --alias <alias>                     Short name for the application
 -d, --deploy                            Deploy the application right after its creation
 -F, --format <format>                   Output format (human, json) (default: human)
     --local                             Only generate the project files, do not create the application on Clever Cloud
 -o, --org, --owner <org-id|org-name>    Organisation to target by its ID (or name, if unambiguous)
 -r, --region <zone>                     Region, can be 'par', 'parhds', 'grahds', 'rbx', 'rbxhds', 'scw', 'ldn', 'mtl', 'sgp', 'syd', 'wsw' (default: par)
+-y, --yes                               Accept to create add-ons that are not free
 ```
 
 ## instances

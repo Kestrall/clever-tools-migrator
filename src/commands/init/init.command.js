@@ -9,6 +9,14 @@ import { Logger } from '../../logger.js';
 import * as AppConfig from '../../models/app_configuration.js';
 import * as Application from '../../models/application.js';
 import { AVAILABLE_ZONES, listAvailableZones } from '../../models/application.js';
+import { getOwnerIdFromOrgIdOrName } from '../../models/ids-resolver.js';
+import {
+  DATABASE_ADDONS,
+  createAddons,
+  formatPrice,
+  parseAddonRequests,
+  planAddons,
+} from '../../models/init/addons.js';
 import {
   checkCanScaffold,
   checkCurrentDirectoryIsEmpty,
@@ -43,6 +51,22 @@ export const initCommand = defineCommand({
       description: 'Deploy the application right after its creation',
       aliases: ['d'],
     }),
+    addon: defineOption({
+      name: 'addon',
+      schema: z
+        .union([z.string(), z.array(z.string())])
+        .transform((value) => (Array.isArray(value) ? value : [value]))
+        .optional(),
+      description: `Database add-on to create and link, with an optional plan (cheapest by default). Can be repeated. Databases: ${Object.keys(DATABASE_ADDONS).join(', ')}`,
+      placeholder: 'database[:plan]',
+      complete: () => Object.keys(DATABASE_ADDONS),
+    }),
+    yes: defineOption({
+      name: 'yes',
+      schema: z.boolean().default(false),
+      description: 'Accept to create add-ons that are not free',
+      aliases: ['y'],
+    }),
     org: orgaIdOrNameOption,
     alias: aliasCreationOption,
     format: humanJsonOutputFormatOption,
@@ -62,7 +86,7 @@ export const initCommand = defineCommand({
     }),
   ],
   async handler(options, runtime, rawName) {
-    const { region, local, deploy, org: orgaIdOrName, alias, format } = options;
+    const { region, local, deploy, addon: addonValues, yes, org: orgaIdOrName, alias, format } = options;
     const template = getStarterTemplate(runtime);
     const hasName = rawName != null && rawName !== '';
     const directory = hasName ? await checkProjectDirectory(process.cwd(), rawName) : process.cwd();
@@ -77,6 +101,10 @@ export const initCommand = defineCommand({
     if (deploy && format === 'json') {
       throw new Error('--deploy streams the deployment logs, it cannot be used with --format json');
     }
+    const addonRequests = parseAddonRequests(addonValues ?? [], runtime);
+    if (addonRequests.length > 0 && local) {
+      throw new Error('--addon creates add-ons on Clever Cloud, it cannot be used with --local');
+    }
     if (!hasName) {
       await checkCurrentDirectoryIsEmpty(directory);
     }
@@ -86,7 +114,17 @@ export const initCommand = defineCommand({
       AppConfig.checkAlreadyLinked(apps, name, alias);
     }
 
-    const scaffold = await scaffoldProject(directory, runtime, name);
+    const addons =
+      addonRequests.length === 0
+        ? []
+        : await planAddons(addonRequests, {
+            ownerId: await getOwnerIdFromOrgIdOrName(orgaIdOrName),
+            region,
+            appName: name,
+            acceptPaidPlans: yes,
+          });
+
+    const scaffold = await scaffoldProject(directory, runtime, name, addons);
     if (hasName) {
       // The application is linked and deployed from the new directory, like a command run inside it
       process.chdir(directory);
@@ -104,6 +142,7 @@ export const initCommand = defineCommand({
         );
       }
       ({ alias: linkedAlias } = await AppConfig.addLinkedApplication(app, alias));
+      await createAddons(addons, app, region);
     }
 
     if (format === 'json') {
@@ -115,11 +154,18 @@ export const initCommand = defineCommand({
         commitError: scaffold.commitError,
         env: template.env,
         app: app == null ? null : { id: app.id, name: app.name, deployUrl: app.deployUrl },
+        addons: addons.map((addon) => ({
+          name: addon.name,
+          provider: addon.provider,
+          plan: addon.planSlug,
+          price: addon.price,
+          variables: addon.variables,
+        })),
       });
       return;
     }
 
-    printResult({ runtime, name, directory, cdCommand, template, scaffold, app, local, deploy });
+    printResult({ runtime, name, directory, cdCommand, template, scaffold, app, addons, local, deploy });
 
     if (deploy) {
       if (scaffold.commit == null) {
@@ -161,10 +207,11 @@ function envHint(env) {
  * @param {import('../../models/init/templates.js').StarterTemplate} result.template
  * @param {import('../../models/init/scaffold.js').ScaffoldResult} result.scaffold
  * @param {any} result.app
+ * @param {import('../../models/init/addons.js').PlannedAddon[]} result.addons
  * @param {boolean} result.local
  * @param {boolean} result.deploy
  */
-function printResult({ runtime, name, directory, cdCommand, template, scaffold, app, local, deploy }) {
+function printResult({ runtime, name, directory, cdCommand, template, scaffold, app, addons, local, deploy }) {
   const check = styleText('green', '✓');
   Logger.println(`${check} ${styleText('bold', runtime)} project generated in ${directory}: ${template.description}`);
   for (const file of scaffold.files) {
@@ -182,6 +229,12 @@ function printResult({ runtime, name, directory, cdCommand, template, scaffold, 
     Logger.println(`${check} Application ${styleText('green', app.name)} created ${styleText('grey', `(${app.id})`)}`);
     for (const [key, value] of Object.entries(template.env)) {
       Logger.println(`    ${styleText('grey', `${key}=${value}`)}`);
+    }
+    for (const addon of addons) {
+      Logger.println(
+        `${check} ${addon.label} add-on ${styleText('green', addon.name)} created and linked ${styleText('grey', `(${addon.planSlug}, ${formatPrice(addon.price)})`)}`,
+      );
+      Logger.println(`    ${styleText('grey', addon.variables.join(', '))}`);
     }
   }
 

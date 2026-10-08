@@ -8,6 +8,7 @@
 > ```bash
 > git clone https://github.com/Kestrall/clever-tools-migrator && cd clever-tools-migrator && npm ci
 > node bin/clever.js init docker my-app --deploy          # new project in ./my-app, created and deployed
+> node bin/clever.js init node my-api --addon pg --deploy  # same, with a free PostgreSQL add-on linked
 > node bin/clever.js migrate /path/to/your/project        # report
 > node bin/clever.js migrate apply /path/to/your/project  # generate the changes on a new branch or in a copy
 > ```
@@ -29,6 +30,7 @@
 >
 > - With an `app-name`, the project is generated in a new `./<app-name>` directory. Without it, the current directory is used, and it must be empty.
 > - The project is committed in a new git repository, then the application is created and linked with the variables its runtime needs.
+> - `--addon <database>[:<plan>]` creates a database add-on and links it to the application: `postgresql` (`pg`), `mysql`, `mongodb` (`mongo`), `redis`, `elasticsearch` (`es`). It can be repeated, the cheapest plan is used by default. The welcome page and the README of the project list the injected environment variables. Add-ons that are not free (MongoDB, Redis, Elasticsearch, or a paid plan) are only created with `--yes`, after their price is shown.
 > - `--deploy` (`-d`) deploys it right after its creation. `--local` only generates the files. `--region`, `--org` and `--alias` work as for `clever create`.
 > - Existing files are never overwritten.
 >

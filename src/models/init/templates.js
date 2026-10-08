@@ -5,9 +5,16 @@
 /**
  * @typedef {object} StarterTemplate
  * @property {string} description
- * @property {(name: string) => Record<string, string>} files relative path → content
+ * @property {(name: string, addons?: StarterAddon[]) => Record<string, string>} files relative path → content
+ * @property {(variable: string) => string} readEnv how the code reads an environment variable
  * @property {Record<string, string>} env environment variables set on the application at creation
  * @property {string} runLocally command to start the application on the developer machine
+ */
+
+/**
+ * @typedef {object} StarterAddon add-on linked to the application, described in the generated project
+ * @property {string} label
+ * @property {string[]} variables environment variables it injects
  */
 
 const HTTP_PORT = 8080;
@@ -39,10 +46,19 @@ BUNDLED WITH
 /**
  * @param {string} name
  * @param {string} runtime
+ * @param {StarterAddon[]} [addons]
  * @returns {string}
  */
-function welcomePage(name, runtime) {
+function welcomePage(name, runtime, addons = []) {
   name = escapeHtml(name);
+  const addonList =
+    addons.length === 0
+      ? ''
+      : `    <p>Linked add-ons, available through environment variables:</p>
+    <ul>
+${addons.map((addon) => `      <li>${escapeHtml(addon.label)}: ${addon.variables.map((variable) => `<code>${variable}</code>`).join(', ')}</li>`).join('\n')}
+    </ul>
+`;
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -53,7 +69,7 @@ function welcomePage(name, runtime) {
   <body style="font-family: system-ui, sans-serif; max-width: 40rem; margin: 4rem auto; padding: 0 1rem">
     <h1>${name}</h1>
     <p>Your ${runtime} application is running on Clever Cloud.</p>
-  </body>
+${addonList}  </body>
 </html>
 `;
 }
@@ -61,14 +77,15 @@ function welcomePage(name, runtime) {
 /**
  * @param {string} name
  * @param {string} runtime
+ * @param {StarterAddon[]} addons
  * @returns {string}
  */
-function nodeServer(name, runtime) {
+function nodeServer(name, runtime, addons) {
   return `const http = require('node:http');
 
 const port = Number(process.env.PORT ?? ${HTTP_PORT});
 
-const page = \`${welcomePage(name, runtime)}\`;
+const page = \`${welcomePage(name, runtime, addons)}\`;
 
 const server = http.createServer((request, response) => {
   if (request.url === '/health') {
@@ -89,10 +106,33 @@ server.listen(port, '0.0.0.0', () => {
 /**
  * @param {string} name
  * @param {string} runLocally
- * @param {string[]} [notes]
+ * @param {string[]} notes
+ * @param {StarterAddon[]} addons
+ * @param {(variable: string) => string} readEnv
  * @returns {string}
  */
-function readme(name, runLocally, notes = []) {
+function readme(name, runLocally, notes, addons, readEnv) {
+  const addonSection =
+    addons.length === 0
+      ? []
+      : [
+          '',
+          '## Add-ons',
+          '',
+          'Clever Cloud injects the credentials of the linked add-ons as environment variables:',
+          '',
+          ...addons.map(
+            (addon) => `- ${addon.label}: ${addon.variables.map((variable) => `\`${variable}\``).join(', ')}`,
+          ),
+          '',
+          'Read them in the code:',
+          '',
+          '```',
+          readEnv(addons[0].variables[0]),
+          '```',
+          '',
+          'To use them locally, `clever env --add-export > .env.clever` then load that file (it is not committed: keep secrets out of git).',
+        ];
   return [
     `# ${name}`,
     '',
@@ -113,6 +153,7 @@ function readme(name, runLocally, notes = []) {
     'clever deploy',
     'clever open',
     '```',
+    ...addonSection,
     ...(notes.length > 0 ? ['', '## Notes', '', ...notes.map((note) => `- ${note}`)] : []),
     '',
   ].join('\n');
@@ -121,10 +162,11 @@ function readme(name, runLocally, notes = []) {
 /** @type {Record<string, StarterTemplate>} */
 export const STARTER_TEMPLATES = {
   docker: {
+    readEnv: (variable) => `process.env.${variable} // server.js`,
     description: 'Dockerfile running a small Node.js HTTP server',
     env: {},
     runLocally: `docker build -t app . && docker run --rm -p ${HTTP_PORT}:${HTTP_PORT} app`,
-    files(name) {
+    files(name, addons = []) {
       return {
         Dockerfile: [
           'FROM node:24-alpine',
@@ -137,20 +179,27 @@ export const STARTER_TEMPLATES = {
           '',
         ].join('\n'),
         '.dockerignore': ['.git', '.clever.json', '*.md', ''].join('\n'),
-        'server.js': nodeServer(name, 'Docker'),
-        '.gitignore': ['.env', ''].join('\n'),
-        'README.md': readme(name, this.runLocally, [
-          `Clever Cloud sends HTTP traffic to port ${HTTP_PORT}: keep the server listening on it.`,
-          'Replace the image and server.js with your own stack, the Dockerfile is all Clever Cloud needs.',
-        ]),
+        'server.js': nodeServer(name, 'Docker', addons),
+        '.gitignore': ['.env', '.env.clever', ''].join('\n'),
+        'README.md': readme(
+          name,
+          this.runLocally,
+          [
+            `Clever Cloud sends HTTP traffic to port ${HTTP_PORT}: keep the server listening on it.`,
+            'Replace the image and server.js with your own stack, the Dockerfile is all Clever Cloud needs.',
+          ],
+          addons,
+          this.readEnv,
+        ),
       };
     },
   },
   node: {
+    readEnv: (variable) => `process.env.${variable}`,
     description: 'Node.js HTTP server without dependencies',
     env: {},
     runLocally: 'npm start',
-    files(name) {
+    files(name, addons = []) {
       return {
         'package.json': `${JSON.stringify(
           {
@@ -163,20 +212,27 @@ export const STARTER_TEMPLATES = {
           null,
           2,
         )}\n`,
-        'server.js': nodeServer(name, 'Node.js'),
-        '.gitignore': ['node_modules/', '.env', ''].join('\n'),
-        'README.md': readme(name, this.runLocally, [
-          'Clever Cloud runs `npm start` and provides the port in the PORT environment variable.',
-          'The Node.js version is chosen from `engines.node` in package.json.',
-        ]),
+        'server.js': nodeServer(name, 'Node.js', addons),
+        '.gitignore': ['node_modules/', '.env', '.env.clever', ''].join('\n'),
+        'README.md': readme(
+          name,
+          this.runLocally,
+          [
+            'Clever Cloud runs `npm start` and provides the port in the PORT environment variable.',
+            'The Node.js version is chosen from `engines.node` in package.json.',
+          ],
+          addons,
+          this.readEnv,
+        ),
       };
     },
   },
   python: {
+    readEnv: (variable) => `os.environ["${variable}"]`,
     description: 'Flask application served by Clever Cloud (CC_PYTHON_MODULE)',
     env: { CC_PYTHON_MODULE: 'app:app' },
     runLocally: 'python3 -m venv .venv && .venv/bin/pip install -r requirements.txt && .venv/bin/python app.py',
-    files(name) {
+    files(name, addons = []) {
       return {
         'app.py': `import os
 
@@ -184,7 +240,7 @@ from flask import Flask
 
 app = Flask(__name__)
 
-PAGE = """${welcomePage(name, 'Python')}"""
+PAGE = """${welcomePage(name, 'Python', addons)}"""
 
 
 @app.get("/")
@@ -202,19 +258,26 @@ if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", ${HTTP_PORT})))
 `,
         'requirements.txt': ['Flask>=3.1,<4', ''].join('\n'),
-        '.gitignore': ['.venv/', '__pycache__/', '.env', ''].join('\n'),
-        'README.md': readme(name, this.runLocally, [
-          'On Clever Cloud the `app` object of app.py is served thanks to `CC_PYTHON_MODULE=app:app` (set by `clever init`).',
-          'Dependencies are installed from requirements.txt at each deployment.',
-        ]),
+        '.gitignore': ['.venv/', '__pycache__/', '.env', '.env.clever', ''].join('\n'),
+        'README.md': readme(
+          name,
+          this.runLocally,
+          [
+            'On Clever Cloud the `app` object of app.py is served thanks to `CC_PYTHON_MODULE=app:app` (set by `clever init`).',
+            'Dependencies are installed from requirements.txt at each deployment.',
+          ],
+          addons,
+          this.readEnv,
+        ),
       };
     },
   },
   php: {
+    readEnv: (variable) => `getenv('${variable}')`,
     description: 'PHP page served by Apache',
     env: {},
     runLocally: `php -S 0.0.0.0:${HTTP_PORT}`,
-    files(name) {
+    files(name, addons = []) {
       return {
         'index.php': `<?php
 
@@ -227,7 +290,7 @@ if ($path === '/health') {
     return;
 }
 ?>
-${welcomePage(name, 'PHP').replace('.</p>', ' with PHP <?= htmlspecialchars(PHP_VERSION) ?>.</p>')}`,
+${welcomePage(name, 'PHP', addons).replace('.</p>', ' with PHP <?= htmlspecialchars(PHP_VERSION) ?>.</p>')}`,
         '.htaccess': [
           'RewriteEngine On',
           'RewriteCond %{REQUEST_FILENAME} !-f',
@@ -235,20 +298,27 @@ ${welcomePage(name, 'PHP').replace('.</p>', ' with PHP <?= htmlspecialchars(PHP_
           'RewriteRule ^ index.php [QSA,L]',
           '',
         ].join('\n'),
-        '.gitignore': ['vendor/', '.env', ''].join('\n'),
-        'README.md': readme(name, this.runLocally, [
-          'Apache serves the root of the repository. Move the public files to a folder and `clever env set CC_WEBROOT /public` if needed.',
-          'Requests that match no file are routed to index.php by .htaccess.',
-          'Add a composer.json to install dependencies at each deployment.',
-        ]),
+        '.gitignore': ['vendor/', '.env', '.env.clever', ''].join('\n'),
+        'README.md': readme(
+          name,
+          this.runLocally,
+          [
+            'Apache serves the root of the repository. Move the public files to a folder and `clever env set CC_WEBROOT /public` if needed.',
+            'Requests that match no file are routed to index.php by .htaccess.',
+            'Add a composer.json to install dependencies at each deployment.',
+          ],
+          addons,
+          this.readEnv,
+        ),
       };
     },
   },
   go: {
+    readEnv: (variable) => `os.Getenv("${variable}")`,
     description: 'Go HTTP server using only the standard library',
     env: {},
     runLocally: 'go run .',
-    files(name) {
+    files(name, addons = []) {
       return {
         'go.mod': [`module ${toPackageName(name)}`, '', 'go 1.23', ''].join('\n'),
         'main.go': `package main
@@ -259,7 +329,7 @@ import (
 \t"os"
 )
 
-const page = \`${welcomePage(name, 'Go')}\`
+const page = \`${welcomePage(name, 'Go', addons)}\`
 
 func main() {
 \tport := os.Getenv("PORT")
@@ -280,35 +350,49 @@ func main() {
 \tlog.Fatal(http.ListenAndServe("0.0.0.0:"+port, nil))
 }
 `,
-        '.gitignore': [`/${toPackageName(name)}`, '.env', ''].join('\n'),
-        'README.md': readme(name, this.runLocally, [
-          'Clever Cloud builds the main package at the root of the module and provides the port in the PORT environment variable.',
-          'The Go version is read from go.mod.',
-        ]),
+        '.gitignore': [`/${toPackageName(name)}`, '.env', '.env.clever', ''].join('\n'),
+        'README.md': readme(
+          name,
+          this.runLocally,
+          [
+            'Clever Cloud builds the main package at the root of the module and provides the port in the PORT environment variable.',
+            'The Go version is read from go.mod.',
+          ],
+          addons,
+          this.readEnv,
+        ),
       };
     },
   },
   static: {
+    readEnv: (variable) => `${variable} is only available to server-side code`,
     description: 'Static website served as is',
     env: {},
     runLocally: `python3 -m http.server ${HTTP_PORT}`,
-    files(name) {
+    files(name, addons = []) {
       return {
-        'index.html': welcomePage(name, 'static'),
+        'index.html': welcomePage(name, 'static', addons),
         'health.txt': 'ok\n',
-        '.gitignore': ['.env', ''].join('\n'),
-        'README.md': readme(name, this.runLocally, [
-          'Every file of the repository is served as is: add your HTML, CSS, JS and images next to index.html.',
-          'To serve a build output instead (dist/, build/, public/...), `clever env set CC_WEBROOT /dist`.',
-        ]),
+        '.gitignore': ['.env', '.env.clever', ''].join('\n'),
+        'README.md': readme(
+          name,
+          this.runLocally,
+          [
+            'Every file of the repository is served as is: add your HTML, CSS, JS and images next to index.html.',
+            'To serve a build output instead (dist/, build/, public/...), `clever env set CC_WEBROOT /dist`.',
+          ],
+          addons,
+          this.readEnv,
+        ),
       };
     },
   },
   ruby: {
+    readEnv: (variable) => `ENV["${variable}"]`,
     description: 'Rack application served by Puma',
     env: {},
     runLocally: `bundle install && bundle exec puma -b tcp://0.0.0.0:${HTTP_PORT}`,
-    files(name) {
+    files(name, addons = []) {
       return {
         Gemfile: [
           'source "https://rubygems.org"',
@@ -321,7 +405,7 @@ func main() {
         // Bundler installs in frozen mode at deployment: the lock must match the Gemfile
         'Gemfile.lock': GEMFILE_LOCK,
         'config.ru': `PAGE = <<~'HTML'
-${welcomePage(name, 'Ruby')}HTML
+${welcomePage(name, 'Ruby', addons)}HTML
 
 run lambda { |env|
   if env["PATH_INFO"] == "/health"
@@ -331,19 +415,26 @@ run lambda { |env|
   end
 }
 `,
-        '.gitignore': ['.bundle/', 'vendor/bundle/', '.env', ''].join('\n'),
-        'README.md': readme(name, this.runLocally, [
-          'Clever Cloud starts Ruby web applications from config.ru (Rack), dependencies come from Gemfile.lock.',
-          'Run `bundle install` after changing the Gemfile and commit the updated Gemfile.lock.',
-        ]),
+        '.gitignore': ['.bundle/', 'vendor/bundle/', '.env', '.env.clever', ''].join('\n'),
+        'README.md': readme(
+          name,
+          this.runLocally,
+          [
+            'Clever Cloud starts Ruby web applications from config.ru (Rack), dependencies come from Gemfile.lock.',
+            'Run `bundle install` after changing the Gemfile and commit the updated Gemfile.lock.',
+          ],
+          addons,
+          this.readEnv,
+        ),
       };
     },
   },
   rust: {
+    readEnv: (variable) => `std::env::var("${variable}")`,
     description: 'Rust HTTP server using only the standard library',
     env: {},
     runLocally: 'cargo run',
-    files(name) {
+    files(name, addons = []) {
       return {
         'Cargo.toml': [
           '[package]',
@@ -358,7 +449,7 @@ run lambda { |env|
 use std::net::{TcpListener, TcpStream};
 use std::thread;
 
-const PAGE: &str = r##"${welcomePage(name, 'Rust')}"##;
+const PAGE: &str = r##"${welcomePage(name, 'Rust', addons)}"##;
 
 fn main() {
     let port = std::env::var("PORT").unwrap_or_else(|_| "${HTTP_PORT}".to_string());
@@ -396,11 +487,17 @@ fn handle(mut stream: TcpStream) {
     let _ = stream.write_all(response.as_bytes());
 }
 `,
-        '.gitignore': ['/target', '.env', ''].join('\n'),
-        'README.md': readme(name, this.runLocally, [
-          'Clever Cloud builds the binary with `cargo build --release` and provides the port in the PORT environment variable.',
-          'Add dependencies with `cargo add` and commit Cargo.lock.',
-        ]),
+        '.gitignore': ['/target', '.env', '.env.clever', ''].join('\n'),
+        'README.md': readme(
+          name,
+          this.runLocally,
+          [
+            'Clever Cloud builds the binary with `cargo build --release` and provides the port in the PORT environment variable.',
+            'Add dependencies with `cargo add` and commit Cargo.lock.',
+          ],
+          addons,
+          this.readEnv,
+        ),
       };
     },
   },

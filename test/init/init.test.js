@@ -71,12 +71,15 @@ afterEach(() => {
 });
 
 describe('clever init templates', () => {
-  it('covers docker, node, python, php, go and static with existing instance types', () => {
-    assert.deepEqual(listStarterRuntimes(), ['docker', 'node', 'python', 'php', 'go', 'static']);
+  it('covers docker, node, python, php, go, static, ruby and rust with existing instance types', () => {
+    assert.deepEqual(listStarterRuntimes(), ['docker', 'node', 'python', 'php', 'go', 'static', 'ruby', 'rust']);
   });
 
   it('rejects an unknown runtime', () => {
-    assert.throws(() => getStarterTemplate('cobol'), /available runtimes: docker, node, python, php, go, static/);
+    assert.throws(
+      () => getStarterTemplate('cobol'),
+      /available runtimes: docker, node, python, php, go, static, ruby, rust/,
+    );
   });
 
   it('escapes the application name in the generated sources', () => {

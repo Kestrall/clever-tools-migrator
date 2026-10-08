@@ -12,6 +12,30 @@
 
 const HTTP_PORT = 8080;
 
+/** Generated with `bundle lock` (ruby 3.4) for the Gemfile of the ruby starter */
+const GEMFILE_LOCK = `GEM
+  remote: https://rubygems.org/
+  specs:
+    nio4r (2.7.5)
+    puma (8.0.2)
+      nio4r (~> 2.0)
+    rack (3.2.7)
+    rackup (2.3.1)
+      rack (>= 3)
+
+PLATFORMS
+  ruby
+  x86_64-linux
+
+DEPENDENCIES
+  puma (~> 8.0)
+  rack (~> 3.2)
+  rackup (~> 2.3)
+
+BUNDLED WITH
+   2.6.9
+`;
+
 /**
  * @param {string} name
  * @param {string} runtime
@@ -280,6 +304,106 @@ func main() {
       };
     },
   },
+  ruby: {
+    description: 'Rack application served by Puma',
+    env: {},
+    runLocally: `bundle install && bundle exec puma -b tcp://0.0.0.0:${HTTP_PORT}`,
+    files(name) {
+      return {
+        Gemfile: [
+          'source "https://rubygems.org"',
+          '',
+          'gem "puma", "~> 8.0"',
+          'gem "rack", "~> 3.2"',
+          'gem "rackup", "~> 2.3"',
+          '',
+        ].join('\n'),
+        // Bundler installs in frozen mode at deployment: the lock must match the Gemfile
+        'Gemfile.lock': GEMFILE_LOCK,
+        'config.ru': `PAGE = <<~'HTML'
+${welcomePage(name, 'Ruby')}HTML
+
+run lambda { |env|
+  if env["PATH_INFO"] == "/health"
+    [200, { "content-type" => "text/plain" }, ["ok"]]
+  else
+    [200, { "content-type" => "text/html; charset=utf-8" }, [PAGE]]
+  end
+}
+`,
+        '.gitignore': ['.bundle/', 'vendor/bundle/', '.env', ''].join('\n'),
+        'README.md': readme(name, this.runLocally, [
+          'Clever Cloud starts Ruby web applications from config.ru (Rack), dependencies come from Gemfile.lock.',
+          'Run `bundle install` after changing the Gemfile and commit the updated Gemfile.lock.',
+        ]),
+      };
+    },
+  },
+  rust: {
+    description: 'Rust HTTP server using only the standard library',
+    env: {},
+    runLocally: 'cargo run',
+    files(name) {
+      return {
+        'Cargo.toml': [
+          '[package]',
+          `name = "${toCrateName(name)}"`,
+          'version = "0.1.0"',
+          'edition = "2021"',
+          '',
+          '[dependencies]',
+          '',
+        ].join('\n'),
+        'src/main.rs': `use std::io::{BufRead, BufReader, Write};
+use std::net::{TcpListener, TcpStream};
+use std::thread;
+
+const PAGE: &str = r##"${welcomePage(name, 'Rust')}"##;
+
+fn main() {
+    let port = std::env::var("PORT").unwrap_or_else(|_| "${HTTP_PORT}".to_string());
+    let listener = TcpListener::bind(format!("0.0.0.0:{port}")).expect("cannot listen on the port");
+    println!("Listening on port {port}");
+    for stream in listener.incoming().flatten() {
+        thread::spawn(move || handle(stream));
+    }
+}
+
+/// Minimal HTTP/1.1 handling: replace it with a framework (axum, actix-web...) for a real application
+fn handle(mut stream: TcpStream) {
+    let mut reader = BufReader::new(&stream);
+    let mut request_line = String::new();
+    if reader.read_line(&mut request_line).is_err() {
+        return;
+    }
+    // Skip the headers
+    let mut header = String::new();
+    while reader.read_line(&mut header).map(|read| read > 0).unwrap_or(false) && header.trim() != "" {
+        header.clear();
+    }
+
+    let target = request_line.split_whitespace().nth(1).unwrap_or("/");
+    let path = target.split('?').next().unwrap_or("/");
+    let (content_type, body) = if path == "/health" {
+        ("text/plain", "ok")
+    } else {
+        ("text/html; charset=utf-8", PAGE)
+    };
+    let response = format!(
+        "HTTP/1.1 200 OK\\r\\nContent-Type: {content_type}\\r\\nContent-Length: {}\\r\\nConnection: close\\r\\n\\r\\n{body}",
+        body.len()
+    );
+    let _ = stream.write_all(response.as_bytes());
+}
+`,
+        '.gitignore': ['/target', '.env', ''].join('\n'),
+        'README.md': readme(name, this.runLocally, [
+          'Clever Cloud builds the binary with `cargo build --release` and provides the port in the PORT environment variable.',
+          'Add dependencies with `cargo add` and commit Cargo.lock.',
+        ]),
+      };
+    },
+  },
 };
 
 /**
@@ -289,6 +413,18 @@ func main() {
  */
 function escapeHtml(value) {
   return value.replace(/[&<>"'`$\\]/g, (character) => `&#${character.charCodeAt(0)};`);
+}
+
+/**
+ * Crate names only allow letters, digits, - and _, and must start with a letter
+ * @param {string} name
+ * @returns {string}
+ */
+function toCrateName(name) {
+  const crateName = toPackageName(name)
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^[^a-z]+/, '');
+  return crateName === '' ? 'app' : crateName;
 }
 
 /**

@@ -60,6 +60,25 @@ export async function checkCanScaffold(directory, runtime, name) {
   }
 }
 
+/** Entries that do not make a directory a project: editor settings, an empty `git init` */
+const IGNORED_ENTRIES = new Set(['.git', '.DS_Store', '.idea', '.vscode']);
+
+/**
+ * Without an application name, the project is written in the current directory: it must not hold anything else
+ * (running `clever init` from a folder of projects would mix the starter with them)
+ * @param {string} directory
+ * @returns {Promise<void>}
+ */
+export async function checkCurrentDirectoryIsEmpty(directory) {
+  const entries = (await fs.readdir(directory)).filter((entry) => !IGNORED_ENTRIES.has(entry)).sort();
+  if (entries.length > 0) {
+    const shown = entries.slice(0, 3).join(', ') + (entries.length > 3 ? `, ... (${entries.length} entries)` : '');
+    throw new Error(
+      `${directory} is not empty (${shown}): run \`clever init <runtime> <app-name>\` to generate the project in a new directory, or \`clever migrate\` to deploy an existing project`,
+    );
+  }
+}
+
 /**
  * Check the name of the project directory created by `clever init <runtime> <app-name>`
  * @param {string} parent

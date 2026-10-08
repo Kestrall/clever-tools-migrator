@@ -6,6 +6,7 @@ import path from 'node:path';
 import { afterEach, describe, it } from 'node:test';
 import {
   checkCanScaffold,
+  checkCurrentDirectoryIsEmpty,
   checkProjectDirectory,
   getStarterTemplate,
   scaffoldProject,
@@ -201,5 +202,22 @@ describe('clever init scaffold', () => {
     const directory = await checkProjectDirectory(repository, 'monapp');
     await assert.rejects(checkCanScaffold(directory, 'node', 'monapp'), /inside the git repository/);
     assert.equal(fs.existsSync(directory), false);
+  });
+
+  it('refuses to write in a current directory that holds other files', async () => {
+    const directory = emptyDirectory();
+    for (const project of ['Bloggy', 'kliicc', 'notes.txt', 'sentinelhub']) {
+      fs.mkdirSync(path.join(directory, project));
+    }
+    await assert.rejects(
+      checkCurrentDirectoryIsEmpty(directory),
+      /is not empty \(Bloggy, kliicc, notes\.txt, \.\.\. \(4 entries\)\): run `clever init <runtime> <app-name>`/,
+    );
+  });
+
+  it('accepts a current directory with only an empty git repository and editor settings', async () => {
+    const directory = emptyDirectory({ git: true });
+    fs.mkdirSync(path.join(directory, '.vscode'));
+    await checkCurrentDirectoryIsEmpty(directory);
   });
 });

@@ -11,6 +11,7 @@ import * as Application from '../../models/application.js';
 import { AVAILABLE_ZONES, listAvailableZones } from '../../models/application.js';
 import {
   checkCanScaffold,
+  checkCurrentDirectoryIsEmpty,
   checkProjectDirectory,
   getStarterTemplate,
   scaffoldProject,
@@ -75,6 +76,9 @@ export const initCommand = defineCommand({
     }
     if (deploy && format === 'json') {
       throw new Error('--deploy streams the deployment logs, it cannot be used with --format json');
+    }
+    if (!hasName) {
+      await checkCurrentDirectoryIsEmpty(directory);
     }
     await checkCanScaffold(directory, runtime, name);
     if (!local && !hasName) {

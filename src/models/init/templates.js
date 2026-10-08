@@ -220,6 +220,66 @@ ${welcomePage(name, 'PHP').replace('.</p>', ' with PHP <?= htmlspecialchars(PHP_
       };
     },
   },
+  go: {
+    description: 'Go HTTP server using only the standard library',
+    env: {},
+    runLocally: 'go run .',
+    files(name) {
+      return {
+        'go.mod': [`module ${toPackageName(name)}`, '', 'go 1.23', ''].join('\n'),
+        'main.go': `package main
+
+import (
+\t"log"
+\t"net/http"
+\t"os"
+)
+
+const page = \`${welcomePage(name, 'Go')}\`
+
+func main() {
+\tport := os.Getenv("PORT")
+\tif port == "" {
+\t\tport = "${HTTP_PORT}"
+\t}
+
+\thttp.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+\t\tw.Header().Set("Content-Type", "text/plain")
+\t\tw.Write([]byte("ok"))
+\t})
+\thttp.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+\t\tw.Header().Set("Content-Type", "text/html; charset=utf-8")
+\t\tw.Write([]byte(page))
+\t})
+
+\tlog.Printf("Listening on port %s", port)
+\tlog.Fatal(http.ListenAndServe("0.0.0.0:"+port, nil))
+}
+`,
+        '.gitignore': [`/${toPackageName(name)}`, '.env', ''].join('\n'),
+        'README.md': readme(name, this.runLocally, [
+          'Clever Cloud builds the main package at the root of the module and provides the port in the PORT environment variable.',
+          'The Go version is read from go.mod.',
+        ]),
+      };
+    },
+  },
+  static: {
+    description: 'Static website served as is',
+    env: {},
+    runLocally: `python3 -m http.server ${HTTP_PORT}`,
+    files(name) {
+      return {
+        'index.html': welcomePage(name, 'static'),
+        'health.txt': 'ok\n',
+        '.gitignore': ['.env', ''].join('\n'),
+        'README.md': readme(name, this.runLocally, [
+          'Every file of the repository is served as is: add your HTML, CSS, JS and images next to index.html.',
+          'To serve a build output instead (dist/, build/, public/...), `clever env set CC_WEBROOT /dist`.',
+        ]),
+      };
+    },
+  },
 };
 
 /**

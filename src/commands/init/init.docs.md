@@ -13,7 +13,7 @@ clever init <runtime> [<app-name>] [options]
 |Name|Description|
 |---|---|
 |`runtime`|Runtime of the project: docker, node, python, php|
-|`app-name`|Application name (current directory name is used if not specified) *(optional)*|
+|`app-name`|Application name, the project is generated in a new directory with this name (current directory and its name if not specified) *(optional)*|
 
 ### ⚙️ Options
 

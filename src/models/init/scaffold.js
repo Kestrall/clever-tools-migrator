@@ -50,12 +50,40 @@ export async function checkCanScaffold(directory, runtime, name) {
     );
   }
 
-  const topLevel = await getGitTopLevel(directory);
-  if (topLevel != null && path.resolve(topLevel) !== path.resolve(directory)) {
+  // A directory still to create is checked through its parent
+  const directoryExists = await exists(directory);
+  const topLevel = await getGitTopLevel(directoryExists ? directory : path.dirname(directory));
+  if (topLevel != null && (!directoryExists || path.resolve(topLevel) !== path.resolve(directory))) {
     throw new Error(
       `${directory} is inside the git repository ${topLevel}: Clever Cloud deploys the root of a repository, run \`clever init\` in a directory of its own`,
     );
   }
+}
+
+/**
+ * Check the name of the project directory created by `clever init <runtime> <app-name>`
+ * @param {string} parent
+ * @param {string} name
+ * @returns {Promise<string>} absolute path of the project directory
+ */
+export async function checkProjectDirectory(parent, name) {
+  if (name === '.' || name === '..' || /[/\\]/.test(name) || name.trim() !== name) {
+    throw new Error(`"${name}" cannot be used as a directory name, choose an application name without slashes`);
+  }
+  const directory = path.join(parent, name);
+  const entries = await fs.readdir(directory).catch((error) => {
+    if (error.code === 'ENOENT') {
+      return [];
+    }
+    if (error.code === 'ENOTDIR') {
+      throw new Error(`${directory} already exists and is not a directory`);
+    }
+    throw error;
+  });
+  if (entries.length > 0) {
+    throw new Error(`${directory} already exists and is not empty, choose another application name`);
+  }
+  return directory;
 }
 
 /**
@@ -68,6 +96,7 @@ export async function checkCanScaffold(directory, runtime, name) {
 export async function scaffoldProject(directory, runtime, name) {
   await checkCanScaffold(directory, runtime, name);
   const files = getStarterTemplate(runtime).files(name);
+  await fs.mkdir(directory, { recursive: true });
 
   for (const [file, content] of Object.entries(files)) {
     const target = path.join(directory, file);

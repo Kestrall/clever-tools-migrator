@@ -4,7 +4,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, it } from 'node:test';
-import { checkCanScaffold, getStarterTemplate, scaffoldProject } from '../../src/models/init/scaffold.js';
+import {
+  checkCanScaffold,
+  checkProjectDirectory,
+  getStarterTemplate,
+  scaffoldProject,
+} from '../../src/models/init/scaffold.js';
 import { STARTER_TEMPLATES, listStarterRuntimes } from '../../src/models/init/templates.js';
 import { analyzeProject } from '../../src/models/migrate/analyze.js';
 
@@ -154,5 +159,47 @@ describe('clever init scaffold', () => {
     const directory = path.join(repository, 'app');
     fs.mkdirSync(directory);
     await assert.rejects(checkCanScaffold(directory, 'python', 'demo'), /inside the git repository/);
+  });
+
+  it('generates the project in a new directory named after the application', async () => {
+    const parent = emptyDirectory();
+    const directory = await checkProjectDirectory(parent, 'monapp');
+    assert.equal(directory, path.join(parent, 'monapp'));
+    assert.equal(fs.existsSync(directory), false);
+    const restore = withGitIdentity();
+    try {
+      const result = await scaffoldProject(directory, 'docker', 'monapp');
+      assert.match(result.commit ?? '', /^[0-9a-f]{40}$/);
+    } finally {
+      restore();
+    }
+    assert.ok(fs.existsSync(path.join(directory, 'Dockerfile')));
+    assert.ok(fs.existsSync(path.join(directory, '.git')));
+    assert.deepEqual(fs.readdirSync(parent), ['monapp']);
+  });
+
+  it('accepts an existing empty directory and refuses a non-empty one', async () => {
+    const parent = emptyDirectory();
+    fs.mkdirSync(path.join(parent, 'empty'));
+    fs.mkdirSync(path.join(parent, 'used'));
+    fs.writeFileSync(path.join(parent, 'used', 'notes.txt'), 'draft');
+    fs.writeFileSync(path.join(parent, 'file'), 'draft');
+    assert.equal(await checkProjectDirectory(parent, 'empty'), path.join(parent, 'empty'));
+    await assert.rejects(checkProjectDirectory(parent, 'used'), /already exists and is not empty/);
+    await assert.rejects(checkProjectDirectory(parent, 'file'), /is not a directory/);
+  });
+
+  it('refuses names that are not a single directory', async () => {
+    const parent = emptyDirectory();
+    for (const name of ['.', '..', 'a/b', '../evil', ' padded']) {
+      await assert.rejects(checkProjectDirectory(parent, name), /cannot be used as a directory name/, name);
+    }
+  });
+
+  it('refuses a new directory inside another git repository', async () => {
+    const repository = emptyDirectory({ git: true });
+    const directory = await checkProjectDirectory(repository, 'monapp');
+    await assert.rejects(checkCanScaffold(directory, 'node', 'monapp'), /inside the git repository/);
+    assert.equal(fs.existsSync(directory), false);
   });
 });

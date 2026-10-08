@@ -9,7 +9,12 @@ import { Logger } from '../../logger.js';
 import * as AppConfig from '../../models/app_configuration.js';
 import * as Application from '../../models/application.js';
 import { AVAILABLE_ZONES, listAvailableZones } from '../../models/application.js';
-import { checkCanScaffold, getStarterTemplate, scaffoldProject } from '../../models/init/scaffold.js';
+import {
+  checkCanScaffold,
+  checkProjectDirectory,
+  getStarterTemplate,
+  scaffoldProject,
+} from '../../models/init/scaffold.js';
 import { listStarterRuntimes } from '../../models/init/templates.js';
 import { deployCommand } from '../deploy/deploy.command.js';
 import { aliasCreationOption, humanJsonOutputFormatOption, orgaIdOrNameOption } from '../global.options.js';
@@ -50,15 +55,19 @@ export const initCommand = defineCommand({
     }),
     defineArgument({
       schema: z.string().optional(),
-      description: 'Application name (current directory name is used if not specified)',
+      description:
+        'Application name, the project is generated in a new directory with this name (current directory and its name if not specified)',
       placeholder: 'app-name',
     }),
   ],
   async handler(options, runtime, rawName) {
     const { region, local, deploy, org: orgaIdOrName, alias, format } = options;
-    const directory = process.cwd();
-    const name = rawName != null && rawName !== '' ? rawName : path.basename(directory);
     const template = getStarterTemplate(runtime);
+    const hasName = rawName != null && rawName !== '';
+    const directory = hasName ? await checkProjectDirectory(process.cwd(), rawName) : process.cwd();
+    const name = hasName ? rawName : path.basename(directory);
+    // Shown in the next steps when the project is in a new directory
+    const cdCommand = hasName ? `cd ${rawName}` : null;
 
     // Fail before writing anything
     if (deploy && local) {
@@ -68,12 +77,17 @@ export const initCommand = defineCommand({
       throw new Error('--deploy streams the deployment logs, it cannot be used with --format json');
     }
     await checkCanScaffold(directory, runtime, name);
-    if (!local) {
+    if (!local && !hasName) {
       const { apps } = await AppConfig.loadApplicationConf();
       AppConfig.checkAlreadyLinked(apps, name, alias);
     }
 
     const scaffold = await scaffoldProject(directory, runtime, name);
+    if (hasName) {
+      // The application is linked and deployed from the new directory, like a command run inside it
+      process.chdir(directory);
+      config.APP_CONFIGURATION_FILE = path.join(directory, '.clever.json');
+    }
 
     let app = null;
     let linkedAlias = null;
@@ -82,7 +96,7 @@ export const initCommand = defineCommand({
         app = await Application.create(name, runtime, region, orgaIdOrName, null, false, template.env);
       } catch (error) {
         throw new Error(
-          `The project files are ready but the application could not be created: ${error.message}\nCreate it later with \`clever create --type ${runtime} ${name}\`${envHint(template.env)}`,
+          `The project files are ready but the application could not be created: ${error.message}\nCreate it later with \`${cdCommand != null ? `${cdCommand} && ` : ''}clever create --type ${runtime} ${name}\`${envHint(template.env)}`,
         );
       }
       ({ alias: linkedAlias } = await AppConfig.addLinkedApplication(app, alias));
@@ -91,6 +105,7 @@ export const initCommand = defineCommand({
     if (format === 'json') {
       Logger.printJson({
         runtime,
+        directory,
         files: scaffold.files,
         commit: scaffold.commit,
         commitError: scaffold.commitError,
@@ -100,7 +115,7 @@ export const initCommand = defineCommand({
       return;
     }
 
-    printResult({ runtime, name, template, scaffold, app, local, deploy });
+    printResult({ runtime, name, directory, cdCommand, template, scaffold, app, local, deploy });
 
     if (deploy) {
       if (scaffold.commit == null) {
@@ -137,15 +152,17 @@ function envHint(env) {
  * @param {object} result
  * @param {string} result.runtime
  * @param {string} result.name
+ * @param {string} result.directory
+ * @param {string|null} result.cdCommand
  * @param {import('../../models/init/templates.js').StarterTemplate} result.template
  * @param {import('../../models/init/scaffold.js').ScaffoldResult} result.scaffold
  * @param {any} result.app
  * @param {boolean} result.local
  * @param {boolean} result.deploy
  */
-function printResult({ runtime, name, template, scaffold, app, local, deploy }) {
+function printResult({ runtime, name, directory, cdCommand, template, scaffold, app, local, deploy }) {
   const check = styleText('green', '✓');
-  Logger.println(`${check} ${styleText('bold', runtime)} project generated: ${template.description}`);
+  Logger.println(`${check} ${styleText('bold', runtime)} project generated in ${directory}: ${template.description}`);
   for (const file of scaffold.files) {
     Logger.println(`    ${styleText('grey', file)}`);
   }
@@ -166,6 +183,9 @@ function printResult({ runtime, name, template, scaffold, app, local, deploy }) 
 
   Logger.println();
   Logger.println(styleText('bold', 'Next steps:'));
+  if (cdCommand != null) {
+    Logger.println(`  ${styleText('blue', '→')} ${styleText('yellow', cdCommand)}`);
+  }
   if (scaffold.commit == null) {
     Logger.println(`  ${styleText('blue', '→')} ${styleText('yellow', 'git add . && git commit -m "Initial commit"')}`);
   }

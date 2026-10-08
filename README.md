@@ -1,14 +1,38 @@
 # Clever Tools — Migrator fork
 
-> This fork of the official [Clever Cloud CLI](https://github.com/CleverCloud/clever-tools) adds a **`clever migrate`** command: it analyzes an existing project (Dockerfile, Docker Compose, Heroku Procfile, Node.js, PHP, Python, Go…), lists what is missing to run it on Clever Cloud and generates the migration plan. **`clever migrate apply`** then writes the changes (setup script, production `.env`, config files, migration guide) on a new git branch or in a copy of the project.
+> This fork of the official [Clever Cloud CLI](https://github.com/CleverCloud/clever-tools) adds two commands:
+>
+> - **`clever init`** starts a new project: it generates a minimal working application for a runtime, commits it, creates and links the application on Clever Cloud, and can deploy it right away.
+> - **`clever migrate`** analyzes an existing project (Dockerfile, Docker Compose, Heroku Procfile, Node.js, PHP, Python, Go…), lists what is missing to run it on Clever Cloud and generates the migration plan. **`clever migrate apply`** then writes the changes (setup script, production `.env`, config files, migration guide) on a new git branch or in a copy of the project.
 >
 > ```bash
 > git clone https://github.com/Kestrall/clever-tools-migrator && cd clever-tools-migrator && npm ci
+> node bin/clever.js init docker my-app --deploy          # new project in ./my-app, created and deployed
 > node bin/clever.js migrate /path/to/your/project        # report
 > node bin/clever.js migrate apply /path/to/your/project  # generate the changes on a new branch or in a copy
 > ```
 >
-> See the [migration guide](./docs/migrate.md) and the [command reference](./src/commands/migrate/migrate.docs.md). The rest of this README is the upstream documentation.
+> ### `clever init <runtime> [app-name]`
+>
+> | Runtime  | Generated project                                                     |
+> | -------- | --------------------------------------------------------------------- |
+> | `docker` | `Dockerfile` running a small Node.js HTTP server                      |
+> | `node`   | Node.js HTTP server without dependencies (`npm start`)                |
+> | `python` | Flask application, served by Clever Cloud with `CC_PYTHON_MODULE`     |
+> | `php`    | PHP page served by Apache, `.htaccess` routing to `index.php`         |
+> | `go`     | Go HTTP server using only the standard library                        |
+> | `static` | Static website (`index.html`) served as is                            |
+> | `ruby`   | Rack application (`config.ru`) served by Puma, with its `Gemfile.lock` |
+> | `rust`   | Rust HTTP server using only the standard library                      |
+>
+> Every starter listens on port 8080 and answers on `/` and `/health` (`/health.txt` for `static`).
+>
+> - With an `app-name`, the project is generated in a new `./<app-name>` directory. Without it, the current directory is used, and it must be empty.
+> - The project is committed in a new git repository, then the application is created and linked with the variables its runtime needs.
+> - `--deploy` (`-d`) deploys it right after its creation. `--local` only generates the files. `--region`, `--org` and `--alias` work as for `clever create`.
+> - Existing files are never overwritten.
+>
+> See the [migration guide](./docs/migrate.md) and the command references of [`init`](./src/commands/init/init.docs.md) and [`migrate`](./src/commands/migrate/migrate.docs.md). The rest of this README is the upstream documentation.
 
 ## Clever Tools (upstream)
 
@@ -97,7 +121,7 @@ clever profile
 clever applications list
 
 # Create a new Node.js/Bun application
-clever applications create --type node
+clever create --type node
 
 # Link existing app to the current directory
 clever link <app_id>
